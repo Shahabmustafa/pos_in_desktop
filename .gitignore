@@ -47,3 +47,6 @@ app.*.map.json
 # Stray dev files
 /Screenshot*.png
 /flutter_*.log
+
+# Database schema scripts are kept out of version control
+*.sql
