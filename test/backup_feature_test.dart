@@ -61,6 +61,18 @@ class _FakeService extends BackupService {
   @override
   Future<BackupOutcome> restore() async =>
       const BackupOutcome(tables: 20, rows: 400);
+
+  @override
+  Future<({String folder, int tables, int rows})> exportCsv(String dir) async =>
+      (folder: '$dir/pos_export_x', tables: 25, rows: 812);
+
+  int cleared = 0;
+
+  @override
+  Future<int> clearLocal() async {
+    cleared = 812;
+    return cleared;
+  }
 }
 
 class _FakeRepository extends BackupRepository {
@@ -134,6 +146,22 @@ void main() {
     expect(p.error, isNull);
     expect(p.settings.lastBackupOk, isTrue);
     expect(p.settings.lastStatus, contains('812'));
+  });
+
+  test('provider exports CSV then clears local data', () async {
+    final ds = _FakeSettingsDataSource();
+    final svc = _FakeService();
+    final p = BackupProvider(_FakeRepository(ds, service: svc));
+    await p.load();
+
+    final folder = await p.exportCsv('/tmp/out');
+    expect(folder, '/tmp/out/pos_export_x');
+    expect(p.message, contains('812'));
+    expect(p.error, isNull);
+
+    await p.clearLocal();
+    expect(svc.cleared, 812);
+    expect(p.message, contains('Cleared 812'));
   });
 
   test('provider surfaces a backup failure and marks it', () async {

@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:pos/shared/app_icon.dart';
 
@@ -112,6 +113,8 @@ class _BackupScreenState extends State<BackupScreen> {
               _statusCard(),
               const SizedBox(height: 16),
               _actionsCard(canEdit),
+              const SizedBox(height: 16),
+              _exportClearCard(canEdit),
             ],
           );
         },
@@ -275,6 +278,79 @@ class _BackupScreenState extends State<BackupScreen> {
         ],
       ),
     );
+  }
+
+  Widget _exportClearCard(bool canEdit) {
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      title: 'Export & clear',
+      subtitle: 'Save every table to CSV files, then wipe the local data for a '
+          'fresh start. Login and the shop header are kept.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed:
+                (canEdit && !_provider.busy) ? _exportAndClear : null,
+            icon: _provider.busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const AppIcon(AppIcons.download,
+                    size: 16, color: Color(0xFFC62828)),
+            label: const Text('Export to CSV, then clear'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFC62828),
+              side: const BorderSide(color: Color(0xFFC62828)),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'You pick the folder. A "pos_export_<date>" folder is created with '
+            'one CSV per table before anything is deleted.',
+            style: TextStyle(fontSize: 12, color: scheme.outline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportAndClear() async {
+    final dir = await FilePicker.getDirectoryPath(
+      dialogTitle: 'Choose where to save the CSV export',
+    );
+    if (dir == null || !mounted) return;
+
+    final folder = await _provider.exportCsv(dir);
+    if (folder == null || !mounted) return; // error already surfaced
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete all local data?'),
+        content: Text(
+          'The CSV export is saved at:\n$folder\n\n'
+          'Every product, customer, invoice, stock and account entry will now '
+          'be permanently removed from this machine. Login and the shop header '
+          'stay.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep data'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFC62828)),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete everything'),
+          ),
+        ],
+      ),
+    );
+    if (proceed == true && mounted) await _provider.clearLocal();
   }
 
   Future<void> _confirmRestore() async {

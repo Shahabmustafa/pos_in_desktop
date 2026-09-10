@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:postgres/postgres.dart';
@@ -82,6 +83,10 @@ class BackupService {
     'cash_entry',
     'expense_entry',
   ];
+
+  /// Tables kept when the local database is cleared — login and the shop
+  /// header, so the till still works and looks right afterwards.
+  static const Set<String> _keepOnClear = {'users', 'receipt_settings'};
 
   SupabaseClient _client() {
     final url = supabaseUrl.trim();
@@ -266,6 +271,90 @@ class BackupService {
     } finally {
       await client.dispose();
     }
+  }
+
+  // ── Export to CSV + clear ──────────────────────────────────────────
+  /// Writes every table to `<dirPath>/pos_export_<timestamp>/<table>.csv` and
+  /// returns the folder path plus the counts.
+  Future<({String folder, int tables, int rows})> exportCsv(
+      String dirPath) async {
+    await ensureLocalSchemas();
+    final now = DateTime.now();
+    String p2(int v) => v.toString().padLeft(2, '0');
+    final folder = Directory(
+      '$dirPath/pos_export_${now.year}${p2(now.month)}${p2(now.day)}'
+      '_${p2(now.hour)}${p2(now.minute)}${p2(now.second)}',
+    );
+    await folder.create(recursive: true);
+
+    final present = await _existingTables();
+    var fileCount = 0;
+    var rowCount = 0;
+    for (final table in tables) {
+      if (!present.contains(table)) continue;
+      final colRows = await _local.execute(
+        Sql.named(
+          "SELECT column_name FROM information_schema.columns "
+          "WHERE table_schema = 'public' AND table_name = @t "
+          "ORDER BY ordinal_position",
+        ),
+        parameters: {'t': table},
+      );
+      final cols = [for (final r in colRows) r[0] as String];
+      if (cols.isEmpty) continue;
+
+      final rows = await _local.execute('SELECT * FROM $table');
+      final buf = StringBuffer()
+        ..writeln(cols.map(_csvField).join(','));
+      for (final row in rows) {
+        final map = row.toColumnMap();
+        buf.writeln(cols.map((c) => _csvField(_csvValue(map[c]))).join(','));
+      }
+      await File('${folder.path}/$table.csv')
+          .writeAsString(buf.toString(), flush: true);
+      fileCount++;
+      rowCount += rows.length;
+    }
+    return (folder: folder.path, tables: fileCount, rows: rowCount);
+  }
+
+  /// Permanently deletes every row from the business tables (keeping login and
+  /// the shop header). Returns how many rows were removed.
+  Future<int> clearLocal() async {
+    await ensureLocalSchemas();
+    final present = await _existingTables();
+    final targets = tables
+        .where((t) => !_keepOnClear.contains(t) && present.contains(t))
+        .toList();
+    if (targets.isEmpty) return 0;
+
+    final counts = await _local.execute(
+      'SELECT ${targets.map((t) => '(SELECT count(*) FROM $t)').join(' + ')} '
+      'AS n',
+    );
+    final removed = ((counts.first.toColumnMap()['n'] as num?) ?? 0).toInt();
+
+    await _local.execute(
+      'TRUNCATE ${targets.join(', ')} RESTART IDENTITY CASCADE',
+    );
+    // Re-seed the rows the app expects to exist.
+    await ensureLocalSchemas();
+    return removed;
+  }
+
+  static String _csvValue(Object? v) => switch (v) {
+        null => '',
+        DateTime t => t.toIso8601String(),
+        Uint8List b => base64Encode(b),
+        List<int> b => base64Encode(b),
+        _ => v.toString(),
+      };
+
+  static String _csvField(String v) {
+    final needsQuote =
+        v.contains(',') || v.contains('"') || v.contains('\n') || v.contains('\r');
+    final escaped = v.replaceAll('"', '""');
+    return needsQuote ? '"$escaped"' : escaped;
   }
 
   // ── helpers ────────────────────────────────────────────────────────

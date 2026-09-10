@@ -89,6 +89,47 @@ class BackupProvider extends ChangeNotifier {
     }
   }
 
+  /// Writes every table to CSV files under [dir]. Returns the folder path on
+  /// success, or `null` on failure (see [error]).
+  Future<String?> exportCsv(String dir) async {
+    if (_busy) return null;
+    _busy = true;
+    _error = null;
+    _message = null;
+    notifyListeners();
+    try {
+      final service = _repository.serviceFor(_settings);
+      final out = await service.exportCsv(dir);
+      _message = 'Saved ${out.rows} row(s) to ${out.tables} CSV file(s)';
+      return out.folder;
+    } catch (e) {
+      _error = _friendly(e);
+      return null;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Permanently clears the local business data (keeps login + shop header).
+  Future<void> clearLocal() async {
+    if (_busy) return;
+    _busy = true;
+    _error = null;
+    _message = null;
+    notifyListeners();
+    try {
+      final service = _repository.serviceFor(_settings);
+      final removed = await service.clearLocal();
+      _message = 'Cleared $removed row(s). Restart the app.';
+    } catch (e) {
+      _error = _friendly(e);
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> restoreNow() async {
     if (_busy) return;
     _busy = true;
