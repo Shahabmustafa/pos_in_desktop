@@ -132,8 +132,9 @@ class _CompanyPaymentScreenState extends State<CompanyPaymentScreen> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 20),
                   child: SectionCard(
+                    padding: const EdgeInsets.fromLTRB(12, 20, 12, 20),
                     title: 'Payments',
                     subtitle: 'Amounts paid to companies against what they are owed',
                     fillHeight: true,
@@ -152,7 +153,7 @@ class _CompanyPaymentScreenState extends State<CompanyPaymentScreen> {
                             onAction: canAdd ? () => _openForm() : null,
                           )
                         : ScrollableTable(
-                            flexColumn: 6, // Narration
+                            flexColumn: 5, // Narration
                             columns: const [
                               DataColumn(label: Text('Payment #')),
                               DataColumn(label: Text('Date')),
