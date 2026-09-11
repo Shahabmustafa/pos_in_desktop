@@ -99,7 +99,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   _passwordFocus.requestFocus(),
                               decoration: const InputDecoration(
                                 hintText: 'Username',
-                                prefixIcon: AppIcon(AppIcons.person_outline),
+                                prefixIcon: AppIcon(AppIcons.person_outline,
+                                    size: 20),
                               ),
                               validator: (v) => (v == null || v.trim().isEmpty)
                                   ? 'Enter your username'
@@ -114,13 +115,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               onFieldSubmitted: (_) => _submit(),
                               decoration: InputDecoration(
                                 hintText: 'Password',
-                                prefixIcon: const AppIcon(AppIcons.lock_outline),
+                                prefixIcon: const AppIcon(AppIcons.lock_outline,
+                                    size: 20),
                                 suffixIcon: IconButton(
                                   tooltip:
                                       _obscure ? 'Show password' : 'Hide password',
-                                  icon: AppIcon(_obscure
-                                      ? AppIcons.visibility_outlined
-                                      : AppIcons.visibility_off_outlined),
+                                  icon: AppIcon(
+                                    _obscure
+                                        ? AppIcons.visibility_outlined
+                                        : AppIcons.visibility_off_outlined,
+                                    size: 20,
+                                  ),
                                   onPressed: () =>
                                       setState(() => _obscure = !_obscure),
                                 ),

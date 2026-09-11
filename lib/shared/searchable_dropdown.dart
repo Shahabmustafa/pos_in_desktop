@@ -101,6 +101,8 @@ class _SearchableDropdownState<T> extends State<SearchableDropdown<T>> {
       hintText: widget.hintText,
       menuHeight: 320,
       expandedInsets: EdgeInsets.zero,
+      trailingIcon: const Icon(Icons.arrow_drop_down, size: 20),
+      selectedTrailingIcon: const Icon(Icons.arrow_drop_up, size: 20),
       dropdownMenuEntries: entries,
       onSelected: widget.onChanged,
     );
