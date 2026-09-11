@@ -87,6 +87,10 @@ const List<FeaturePermission> kFeaturePermissions = [
   FeaturePermission(key: 'customer', label: 'Customers', group: 'Parties'),
   FeaturePermission(key: 'company', label: 'Companies', group: 'Parties'),
   FeaturePermission(
+      key: 'customer_payment', label: 'Receive Payment', group: 'Parties'),
+  FeaturePermission(
+      key: 'company_payment', label: 'Pay Company', group: 'Parties'),
+  FeaturePermission(
     key: 'party_ledger',
     label: 'Party Ledger',
     group: 'Parties',
@@ -139,6 +143,7 @@ const Set<String> _cashierFeatures = {
   'sale_return',
   'sale_exchange',
   'customer',
+  'customer_payment',
   'party_ledger',
   'cash_register',
   'stock_inventory',

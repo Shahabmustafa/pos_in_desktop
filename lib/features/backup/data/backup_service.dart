@@ -9,7 +9,9 @@ import '../../../config/database/database_connection.dart';
 import '../../bank/data/datasource/bank_datasource.dart';
 import '../../cash_register/data/datasource/cash_register_datasource.dart';
 import '../../company/data/datasource/company_datasource.dart';
+import '../../company_payment/data/datasource/company_payment_datasource.dart';
 import '../../customer/data/datasource/customer_datasource.dart';
+import '../../customer_payment/data/datasource/customer_payment_datasource.dart';
 import '../../expense/data/datasource/expense_datasource.dart';
 import '../../login/data/datasource/login_datasource.dart';
 import '../../product_catalog/data/datasource/product_catalog_datasource.dart';
@@ -82,6 +84,8 @@ class BackupService {
     'bank_entry',
     'cash_entry',
     'expense_entry',
+    'customer_payment',
+    'company_payment',
   ];
 
   /// Tables kept when the local database is cleared — login and the shop
@@ -118,6 +122,8 @@ class BackupService {
     await tryEnsure(const ExpenseDataSource().ensureSchema);
     await tryEnsure(const CashRegisterDataSource().ensureSchema);
     await tryEnsure(const VoucherDataSource().ensureSchema);
+    await tryEnsure(const CustomerPaymentDataSource().ensureSchema);
+    await tryEnsure(const CompanyPaymentDataSource().ensureSchema);
     await tryEnsure(const ReceiptSettingsDataSource().ensureSchema);
     await tryEnsure(LoginDataSource().ensureSchema);
     await tryEnsure(const SaleInvoiceDataSource().ensureSchema);

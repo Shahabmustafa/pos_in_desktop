@@ -7,6 +7,8 @@ import '../../bank/presentation/screen/bank_screen.dart';
 import '../../cash_register/presentation/screen/cash_register_screen.dart';
 import '../../company/presentation/screen/company_screen.dart';
 import '../../customer/presentation/screen/customer_screen.dart';
+import '../../company_payment/presentation/screen/company_payment_screen.dart';
+import '../../customer_payment/presentation/screen/customer_payment_screen.dart';
 import '../../dashboard/presentation/screen/dashboard_screen.dart';
 import '../../expense/presentation/screen/expense_screen.dart';
 import '../../purchase/presentation/screen/purchase_screen.dart';
@@ -164,6 +166,18 @@ const List<NavGroup> kNavGroups = [
         permissionKey: 'company',
       ),
       NavDestination(
+        label: 'Receive Payment',
+        icon: AppIcons.account_balance_wallet_outlined,
+        builder: _customerPayment,
+        permissionKey: 'customer_payment',
+      ),
+      NavDestination(
+        label: 'Pay Company',
+        icon: AppIcons.payments_outlined,
+        builder: _companyPayment,
+        permissionKey: 'company_payment',
+      ),
+      NavDestination(
         label: 'Party Ledger',
         icon: AppIcons.receipt_long_outlined,
         builder: _partyLedger,
@@ -249,6 +263,8 @@ Widget _voucher(BuildContext _) => const VoucherScreen();
 Widget _expense(BuildContext _) => const ExpenseScreen();
 Widget _customer(BuildContext _) => const CustomerScreen();
 Widget _company(BuildContext _) => const CompanyScreen();
+Widget _customerPayment(BuildContext _) => const CustomerPaymentScreen();
+Widget _companyPayment(BuildContext _) => const CompanyPaymentScreen();
 Widget _partyLedger(BuildContext _) => const PartyLedgerScreen();
 Widget _reports(BuildContext _) => const ReportsScreen();
 Widget _receiptSettings(BuildContext _) => const ReceiptSettingsScreen();

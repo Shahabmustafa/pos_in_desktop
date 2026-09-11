@@ -98,6 +98,23 @@ class PartyLedgerDataSource {
       return out;
     });
 
+    // 3. Customer payment — money collected outside a sale invoice, a credit.
+    await _collect(moves, '''
+      SELECT payment_date AS d, id AS ord, payment_no AS doc, narration AS detail,
+             amount AS amt
+      FROM customer_payment WHERE customer_id = @pid
+    ''', {'pid': party.id}, (m) => [
+          LedgerEntry(
+            date: _dt(m['d']),
+            type: 'Receipt',
+            docNo: _doc(m['doc']),
+            detail: _text(m['detail']),
+            debit: 0,
+            credit: _d(m['amt']),
+            sortKey: (m['ord'] as int) * 10,
+          ),
+        ]);
+
     // Customer: stored balance is the live receivable → treat it as the
     // closing figure and work the opening back from it.
     return PartyLedger.assemble(
@@ -141,6 +158,23 @@ class PartyLedgerDataSource {
           LedgerEntry(
             date: _dt(m['d']),
             type: 'Purchase Return',
+            docNo: _doc(m['doc']),
+            detail: _text(m['detail']),
+            debit: 0,
+            credit: _d(m['amt']),
+            sortKey: (m['ord'] as int) * 10,
+          ),
+        ]);
+
+    // Company payment — money paid outside a purchase invoice, a debit-reducer.
+    await _collect(moves, '''
+      SELECT payment_date AS d, id AS ord, payment_no AS doc, narration AS detail,
+             amount AS amt
+      FROM company_payment WHERE company_id = @pid
+    ''', {'pid': party.id}, (m) => [
+          LedgerEntry(
+            date: _dt(m['d']),
+            type: 'Payment',
             docNo: _doc(m['doc']),
             detail: _text(m['detail']),
             debit: 0,
