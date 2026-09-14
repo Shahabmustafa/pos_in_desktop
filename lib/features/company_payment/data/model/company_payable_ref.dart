@@ -1,10 +1,9 @@
 /// A company (supplier) reference for the payment picker, carrying how much
 /// the business currently owes them.
 ///
-/// `company.opening_balance` alone is not this figure — it's a static
-/// starting balance that purchase invoices/returns never touch (see
-/// `CompanyPaymentModel`). [payable] is computed live: opening balance +
-/// purchases - purchase returns - payments already made.
+/// [payable] is `company.opening_balance` — kept live by Purchase Invoice
+/// (the unpaid portion of each bill), Purchase Return and this feature's own
+/// payments, the same way `customer.opening_balance` works.
 class CompanyPayableRef {
   const CompanyPayableRef({
     required this.id,

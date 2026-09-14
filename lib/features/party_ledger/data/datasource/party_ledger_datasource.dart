@@ -132,22 +132,38 @@ class PartyLedgerDataSource {
       PartyRef party, DateTime from, DateTime to) async {
     final moves = <LedgerEntry>[];
 
-    // Purchase invoice — you owe the supplier more, a debit.
+    // Purchase invoice — you owe the supplier more, a debit; cash paid at
+    // purchase time is a same-day credit.
     await _collect(moves, '''
       SELECT invoice_date AS d, id AS ord, invoice_no AS doc, notes AS detail,
-             grand_total AS amt
+             grand_total AS amt, amount_paid AS paid
       FROM purchase_invoice WHERE company_id = @pid
-    ''', {'pid': party.id}, (m) => [
-          LedgerEntry(
-            date: _dt(m['d']),
-            type: 'Purchase',
-            docNo: _doc(m['doc']),
-            detail: _text(m['detail']),
-            debit: _d(m['amt']),
-            credit: 0,
-            sortKey: (m['ord'] as int) * 10,
-          ),
-        ]);
+    ''', {'pid': party.id}, (m) {
+      final out = <LedgerEntry>[
+        LedgerEntry(
+          date: _dt(m['d']),
+          type: 'Purchase',
+          docNo: _doc(m['doc']),
+          detail: _text(m['detail']),
+          debit: _d(m['amt']),
+          credit: 0,
+          sortKey: (m['ord'] as int) * 10,
+        ),
+      ];
+      final paid = _d(m['paid']);
+      if (paid != 0) {
+        out.add(LedgerEntry(
+          date: _dt(m['d']),
+          type: 'Payment',
+          docNo: _doc(m['doc']),
+          detail: 'Cash at purchase',
+          debit: 0,
+          credit: paid,
+          sortKey: (m['ord'] as int) * 10 + 1,
+        ));
+      }
+      return out;
+    });
 
     // Purchase return — goods sent back, you owe less, a credit.
     await _collect(moves, '''
@@ -183,13 +199,14 @@ class PartyLedgerDataSource {
           ),
         ]);
 
-    // Company: opening_balance is a true opening that nothing mutates.
+    // Company: stored balance is the live payable → treat it as the closing
+    // figure and work the opening back from it (same as the customer side).
     return PartyLedger.assemble(
       kind: LedgerKind.company,
       partyName: party.name,
       moves: moves,
       anchor: party.storedBalance,
-      anchorIsClosing: false,
+      anchorIsClosing: true,
       from: from,
       to: to,
     );

@@ -7,8 +7,9 @@ import '../model/cash_register_model.dart';
 ///
 /// `cash_account` (one row) and `cash_entry` (manual movements) are stored.
 /// The cash book is assembled on read from those plus the cash-affecting rows
-/// of `sale_invoice` / `sale_return` / `expense_entry` / `voucher`. A source
-/// table that does not exist yet just drops out (same as `ReportsDataSource`).
+/// of `sale_invoice` / `sale_return` / `purchase_invoice` / `expense_entry` /
+/// `voucher`. A source table that does not exist yet just drops out (same as
+/// `ReportsDataSource`).
 class CashRegisterDataSource {
   const CashRegisterDataSource();
 
@@ -142,6 +143,23 @@ class CashRegisterDataSource {
           detail: _combine(m['doc'], m['party']),
           inAmount: _d(m['amt']),
           outAmount: 0,
+          sortKey: (m['ord'] as int) * 10,
+        ));
+
+    // Cash paid to suppliers at purchase time (purchase invoice has no bank
+    // option — it is always cash).
+    await _collect(moves, '''
+      SELECT invoice_date AS d, id AS ord, invoice_no AS doc, company_name AS party,
+             amount_paid AS amt
+      FROM purchase_invoice
+      WHERE amount_paid <> 0
+    ''', (m) => CashMovement(
+          date: _dt(m['d']),
+          type: 'Purchase',
+          category: 'Cash purchase',
+          detail: _combine(m['doc'], m['party']),
+          inAmount: 0,
+          outAmount: _d(m['amt']),
           sortKey: (m['ord'] as int) * 10,
         ));
 

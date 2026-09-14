@@ -64,35 +64,14 @@ class CompanyPaymentDataSource {
   }
 
   /// Active companies for the payment form's picker, with how much the
-  /// business currently owes each one (opening + purchases - returns - what
-  /// has already been paid). Falls back to just the opening balance if
-  /// `purchase_invoice` / `purchase_return` / `company_payment` aren't there yet.
+  /// business currently owes each one — `company.opening_balance`, kept live
+  /// by Purchase Invoice (unpaid portion), Purchase Return and this feature.
   Future<List<CompanyPayableRef>> fetchCompanies() async {
-    try {
-      final r = await _conn.execute('''
-        SELECT c.id, c.name,
-               c.opening_balance
-                 + COALESCE(pi.total, 0)
-                 - COALESCE(pr.total, 0)
-                 - COALESCE(cp.total, 0) AS payable
-        FROM company c
-        LEFT JOIN (SELECT company_id, SUM(grand_total) AS total
-                   FROM purchase_invoice GROUP BY company_id) pi ON pi.company_id = c.id
-        LEFT JOIN (SELECT company_id, SUM(grand_total) AS total
-                   FROM purchase_return GROUP BY company_id) pr ON pr.company_id = c.id
-        LEFT JOIN (SELECT company_id, SUM(amount) AS total
-                   FROM company_payment GROUP BY company_id) cp ON cp.company_id = c.id
-        WHERE c.is_active = TRUE
-        ORDER BY c.name
-      ''');
-      return r.map((row) => CompanyPayableRef.fromMap(row.toColumnMap())).toList();
-    } on ServerException {
-      final r = await _conn.execute(
-        'SELECT id, name, opening_balance AS payable FROM company '
-        'WHERE is_active = TRUE ORDER BY name',
-      );
-      return r.map((row) => CompanyPayableRef.fromMap(row.toColumnMap())).toList();
-    }
+    final r = await _conn.execute(
+      'SELECT id, name, opening_balance AS payable FROM company '
+      'WHERE is_active = TRUE ORDER BY name',
+    );
+    return r.map((row) => CompanyPayableRef.fromMap(row.toColumnMap())).toList();
   }
 
   /// Active bank accounts for the optional "pay from bank" picker.
@@ -129,6 +108,8 @@ class CompanyPaymentDataSource {
         );
         header = n.first.toColumnMap();
       }
+      // Money paid out lowers what the company is still owed.
+      await _adjustCompanyBalance(s, p.companyId, -p.amount);
       final description = 'Payment ${(header['payment_no'] as String?) ?? ''}'
           '${p.companyName.isEmpty ? '' : ' — ${p.companyName}'}';
       if (p.bankHeadId != null) {
@@ -146,26 +127,67 @@ class CompanyPaymentDataSource {
     });
   }
 
-  Future<CompanyPaymentModel> update(CompanyPaymentModel p) async {
-    final r = await _conn.execute(
-      Sql.named('''
-        UPDATE company_payment SET
-          payment_no = @payment_no, payment_date = @payment_date,
-          company_id = @company_id, company_name = @company_name,
-          amount = @amount, bank_head_id = @bank_head_id,
-          reference = @reference, narration = @narration
-        WHERE id = @id
-        RETURNING $_cols
-      '''),
-      parameters: p.toMap(),
-    );
-    return CompanyPaymentModel.fromMap(r.first.toColumnMap());
+  Future<CompanyPaymentModel> update(CompanyPaymentModel p) {
+    return _conn.runTx((s) async {
+      // Undo the balance effect the previous version of this payment had.
+      final prev = await s.execute(
+        Sql.named('SELECT company_id, amount FROM company_payment WHERE id = @id'),
+        parameters: {'id': p.id},
+      );
+      if (prev.isNotEmpty) {
+        final m = prev.first.toColumnMap();
+        await _adjustCompanyBalance(s, m['company_id'] as int?, _num(m['amount']));
+      }
+
+      final r = await s.execute(
+        Sql.named('''
+          UPDATE company_payment SET
+            payment_no = @payment_no, payment_date = @payment_date,
+            company_id = @company_id, company_name = @company_name,
+            amount = @amount, bank_head_id = @bank_head_id,
+            reference = @reference, narration = @narration
+          WHERE id = @id
+          RETURNING $_cols
+        '''),
+        parameters: p.toMap(),
+      );
+      await _adjustCompanyBalance(s, p.companyId, -p.amount);
+      return CompanyPaymentModel.fromMap(r.first.toColumnMap());
+    });
   }
 
-  Future<void> delete(int id) => _conn.execute(
+  Future<void> delete(int id) {
+    return _conn.runTx((s) async {
+      final prev = await s.execute(
+        Sql.named('SELECT company_id, amount FROM company_payment WHERE id = @id'),
+        parameters: {'id': id},
+      );
+      if (prev.isNotEmpty) {
+        final m = prev.first.toColumnMap();
+        await _adjustCompanyBalance(s, m['company_id'] as int?, _num(m['amount']));
+      }
+      await s.execute(
         Sql.named('DELETE FROM company_payment WHERE id = @id'),
         parameters: {'id': id},
       );
+    });
+  }
+
+  static double _num(Object? v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse('$v') ?? 0;
+  }
+
+  /// Adds [delta] (may be negative) to `company.opening_balance`.
+  Future<void> _adjustCompanyBalance(
+      Session s, int? companyId, double delta) async {
+    if (companyId == null || delta == 0) return;
+    await s.execute(
+      Sql.named('UPDATE company SET opening_balance = opening_balance + @d '
+          'WHERE id = @id'),
+      parameters: {'d': delta, 'id': companyId},
+    );
+  }
 
   /// Posts a `bank_entry` withdrawal for [amount] against [bankHeadId].
   Future<void> _postBankWithdraw(

@@ -9,8 +9,12 @@ import 'package:pos/features/purchase/presentation/provider/purchase_provider.da
 import 'package:pos/features/purchase/presentation/screen/purchase_screen.dart';
 
 class _FakeDataSource extends PurchaseDataSource {
-  _FakeDataSource();
+  _FakeDataSource([Map<int, double>? balances])
+      : balances = balances ?? {1: 0};
 
+  /// Mimics `company.opening_balance` being mutated directly by this
+  /// datasource, without touching Postgres.
+  final Map<int, double> balances;
   final List<PurchaseModel> rows = [];
   int _id = 1;
 
@@ -21,8 +25,10 @@ class _FakeDataSource extends PurchaseDataSource {
   Future<List<PurchaseModel>> fetchAll() async => List.of(rows);
 
   @override
-  Future<List<CompanyRef>> fetchCompanies() async =>
-      const [CompanyRef(id: 1, name: 'Nestlé Pakistan')];
+  Future<List<CompanyRef>> fetchCompanies() async => [
+        for (final e in balances.entries)
+          CompanyRef(id: e.key, name: 'Nestlé Pakistan', openingBalance: e.value),
+      ];
 
   @override
   Future<List<ProductRef>> fetchProducts() async => const [
@@ -33,6 +39,9 @@ class _FakeDataSource extends PurchaseDataSource {
   Future<PurchaseModel> insert(PurchaseModel p) async {
     final saved = p.copyWith(id: _id++);
     rows.add(saved);
+    if (p.companyId != null) {
+      balances[p.companyId!] = (balances[p.companyId!] ?? 0) + p.balanceDue;
+    }
     return saved;
   }
 
@@ -76,6 +85,37 @@ void main() {
     expect(p.taxTotal, closeTo(144, 0.001));
     expect(p.grandTotal, closeTo(1144, 0.001));
     expect(p.itemCount, 2);
+  });
+
+  test('balanceDue is what is left unpaid on the invoice', () {
+    final p = invoice(items: const [
+      PurchaseItemModel(productId: 1, quantity: 1, purchasePrice: 1000),
+    ]).copyWith(amountPaid: 400);
+
+    expect(p.grandTotal, 1000);
+    expect(p.balanceDue, 600);
+  });
+
+  test('amount_paid round-trips through toMap/fromMap', () {
+    final p = invoice().copyWith(amountPaid: 250);
+    final restored = PurchaseModel.fromMap(p.toMap());
+    expect(restored.amountPaid, 250);
+  });
+
+  test('partial payment at purchase time raises the company\'s opening '
+      'balance by only the unpaid balance', () async {
+    final p = makeProvider();
+    await p.load();
+    expect(p.companies.single.openingBalance, 0);
+
+    await p.save(invoice(items: const [
+      PurchaseItemModel(productId: 10, quantity: 4, purchasePrice: 95),
+      // grand_total = 380
+    ]).copyWith(amountPaid: 300));
+    await p.load();
+
+    // 380 - 300 paid now = 80 left on the company's balance.
+    expect(p.companies.single.openingBalance, closeTo(80, 0.001));
   });
 
   test('provider aggregates and suggests the next number', () async {

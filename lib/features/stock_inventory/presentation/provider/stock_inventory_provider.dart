@@ -116,6 +116,10 @@ class StockInventoryProvider extends ChangeNotifier {
 
   String _friendly(Object e) {
     final t = e.toString();
+    if (t.contains('23503')) {
+      return 'This product is used in a sale/purchase invoice or return and '
+          'cannot be deleted. Mark it inactive instead.';
+    }
     if (t.contains('42501')) {
       return 'Permission denied. Run '
           'lib/features/stock_inventory/data/sql/stock_inventory.sql as a '

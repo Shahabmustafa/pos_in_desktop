@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
 import 'package:pos/shared/app_icon.dart';
 
 import '../../../../config/format.dart';
@@ -71,6 +72,7 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
         productName: i.name,
         priceLabel: 'Rs ${Fmt.money(i.salePrice)}',
       ),
+      pageFormat: PdfPageFormat.roll80,
       onError: (msg) {
         if (mounted) {
           ScaffoldMessenger.of(context)
@@ -96,7 +98,13 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
         ],
       ),
     );
-    if (yes == true) await _provider.delete(i.id!);
+    if (yes != true) return;
+    final ok = await _provider.delete(i.id!);
+    if (!mounted) return;
+    if (!ok && _provider.error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_provider.error!)));
+    }
   }
 
   @override

@@ -1,17 +1,33 @@
 // Lightweight `{id, name}` style references used by the purchase invoice
 // form's pickers.
 
+double _toDouble(Object? v) {
+  if (v == null) return 0;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0;
+}
+
 /// A company (supplier) the invoice can be booked against. Fed from the
 /// `company` master table.
 class CompanyRef {
-  const CompanyRef({required this.id, required this.name});
+  const CompanyRef({
+    required this.id,
+    required this.name,
+    this.openingBalance = 0,
+  });
 
   final int id;
   final String name;
 
+  /// The company's running balance in `company.opening_balance` — kept live
+  /// by purchase invoices (unpaid portion), purchase returns and Pay Company
+  /// payments, the same way `customer.opening_balance` works.
+  final double openingBalance;
+
   factory CompanyRef.fromMap(Map<String, dynamic> map) => CompanyRef(
         id: map['id'] as int,
         name: (map['name'] as String?) ?? '',
+        openingBalance: _toDouble(map['opening_balance']),
       );
 
   /// Equality by [id] so a value coming back from a dropdown matches the
@@ -67,10 +83,4 @@ class ProductRef {
 
   @override
   String toString() => name;
-
-  static double _toDouble(Object? v) {
-    if (v == null) return 0;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString()) ?? 0;
-  }
 }

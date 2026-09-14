@@ -118,6 +118,7 @@ class PurchaseModel {
     this.companyName = '',
     this.reference = '',
     this.notes = '',
+    this.amountPaid = 0,
     this.items = const [],
   });
 
@@ -132,6 +133,12 @@ class PurchaseModel {
   /// Supplier bill / DC number.
   final String reference;
   final String notes;
+
+  /// Cash paid to the supplier at purchase time. The rest of [grandTotal] is
+  /// left on the company's running payable (computed live — see
+  /// `PurchaseDataSource.fetchCompanies`).
+  final double amountPaid;
+
   final List<PurchaseItemModel> items;
 
   double get subtotal => items.fold(0, (a, i) => a + i.gross);
@@ -139,6 +146,9 @@ class PurchaseModel {
   double get taxTotal => items.fold(0, (a, i) => a + i.taxAmount);
   double get grandTotal => items.fold(0, (a, i) => a + i.lineTotal);
   int get itemCount => items.length;
+
+  /// Portion of this invoice left on the company's payable.
+  double get balanceDue => grandTotal - amountPaid;
 
   factory PurchaseModel.fromMap(
     Map<String, dynamic> map, {
@@ -152,6 +162,7 @@ class PurchaseModel {
       companyName: (map['company_name'] as String?) ?? '',
       reference: (map['reference'] as String?) ?? '',
       notes: (map['notes'] as String?) ?? '',
+      amountPaid: _toDouble(map['amount_paid']),
       items: items,
     );
   }
@@ -166,6 +177,7 @@ class PurchaseModel {
         'company_name': companyName,
         'reference': reference,
         'notes': notes,
+        'amount_paid': amountPaid,
         'subtotal': subtotal,
         'discount_total': discountTotal,
         'tax_total': taxTotal,
@@ -180,6 +192,7 @@ class PurchaseModel {
     String? companyName,
     String? reference,
     String? notes,
+    double? amountPaid,
     List<PurchaseItemModel>? items,
   }) {
     return PurchaseModel(
@@ -190,6 +203,7 @@ class PurchaseModel {
       companyName: companyName ?? this.companyName,
       reference: reference ?? this.reference,
       notes: notes ?? this.notes,
+      amountPaid: amountPaid ?? this.amountPaid,
       items: items ?? this.items,
     );
   }
@@ -197,5 +211,11 @@ class PurchaseModel {
   static DateTime _toDate(Object? v) {
     if (v is DateTime) return v;
     return DateTime.tryParse(v?.toString() ?? '') ?? DateTime.now();
+  }
+
+  static double _toDouble(Object? v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0;
   }
 }

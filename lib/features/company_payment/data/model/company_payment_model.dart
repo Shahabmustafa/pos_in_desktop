@@ -1,10 +1,8 @@
 /// A payment made to a company (supplier) against what the business owes
 /// them — independent of any particular purchase invoice.
 ///
-/// Unlike the customer side, `company.opening_balance` is a true, never-
-/// mutated opening figure (purchase invoices/returns don't touch it either),
-/// so a payment here does not adjust it. What the business currently owes a
-/// company is instead worked out live — see `CompanyPayableRef`.
+/// Same convention as the customer side: paying a company lowers
+/// `company.opening_balance` by [amount] (see `CompanyPaymentDataSource`).
 class CompanyPaymentModel {
   const CompanyPaymentModel({
     this.id,

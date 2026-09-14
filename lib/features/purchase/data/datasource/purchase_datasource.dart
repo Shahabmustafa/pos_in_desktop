@@ -8,7 +8,7 @@ import '../model/purchase_refs.dart';
 
 const _cols =
     'id, invoice_no, invoice_date, company_id, company_name, reference, notes, '
-    'subtotal, discount_total, tax_total, grand_total';
+    'amount_paid, subtotal, discount_total, tax_total, grand_total';
 
 const _itemCols =
     'id, purchase_invoice_id, product_id, product_name, barcode, unit, quantity, '
@@ -62,6 +62,7 @@ class PurchaseDataSource {
           company_name   TEXT          NOT NULL DEFAULT '',
           reference      TEXT          NOT NULL DEFAULT '',
           notes          TEXT          NOT NULL DEFAULT '',
+          amount_paid    NUMERIC(14,2) NOT NULL DEFAULT 0,
           subtotal       NUMERIC(14,2) NOT NULL DEFAULT 0,
           discount_total NUMERIC(14,2) NOT NULL DEFAULT 0,
           tax_total      NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -79,6 +80,7 @@ class PurchaseDataSource {
           ADD COLUMN IF NOT EXISTS company_name   TEXT          NOT NULL DEFAULT '',
           ADD COLUMN IF NOT EXISTS reference      TEXT          NOT NULL DEFAULT '',
           ADD COLUMN IF NOT EXISTS notes          TEXT          NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS amount_paid    NUMERIC(14,2) NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS subtotal       NUMERIC(14,2) NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS discount_total NUMERIC(14,2) NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS tax_total      NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -142,12 +144,16 @@ class PurchaseDataSource {
     }).toList();
   }
 
-  /// Active companies for the invoice's supplier picker. Empty when the
-  /// `company` table does not exist yet.
+  /// Active companies for the invoice's supplier picker. `opening_balance` is
+  /// kept live by this datasource (unpaid portion of each purchase invoice),
+  /// by Purchase Return and by Pay Company — the same convention as
+  /// `customer.opening_balance`. Empty when the `company` table does not
+  /// exist yet.
   Future<List<CompanyRef>> fetchCompanies() async {
     try {
       final r = await _conn.execute(
-        'SELECT id, name FROM company WHERE is_active = TRUE ORDER BY name',
+        'SELECT id, name, opening_balance FROM company '
+        'WHERE is_active = TRUE ORDER BY name',
       );
       return r.map((row) => CompanyRef.fromMap(row.toColumnMap())).toList();
     } on ServerException {
@@ -175,28 +181,42 @@ class PurchaseDataSource {
         Sql.named('''
           INSERT INTO purchase_invoice
             (invoice_no, invoice_date, company_id, company_name, reference, notes,
-             subtotal, discount_total, tax_total, grand_total)
+             amount_paid, subtotal, discount_total, tax_total, grand_total)
           VALUES
             (@invoice_no, @invoice_date, @company_id, @company_name, @reference, @notes,
-             @subtotal, @discount_total, @tax_total, @grand_total)
+             @amount_paid, @subtotal, @discount_total, @tax_total, @grand_total)
           RETURNING $_cols
         '''),
         parameters: p.toMap()..remove('id'),
       );
       final header = r.first.toColumnMap();
       final items = await _replaceItems(s, header['id'] as int, p.items);
+      // The unpaid part of the bill goes onto the company's running balance.
+      await _adjustCompanyBalance(s, p.companyId, p.grandTotal - p.amountPaid);
       return PurchaseModel.fromMap(header, items: items);
     });
   }
 
   Future<PurchaseModel> update(PurchaseModel p) {
     return _conn.runTx((s) async {
+      // Undo the balance effect the previous version of this invoice had.
+      final prev = await s.execute(
+        Sql.named('SELECT company_id, grand_total, amount_paid '
+            'FROM purchase_invoice WHERE id = @id'),
+        parameters: {'id': p.id},
+      );
+      if (prev.isNotEmpty) {
+        final m = prev.first.toColumnMap();
+        await _adjustCompanyBalance(s, m['company_id'] as int?,
+            -(_num(m['grand_total']) - _num(m['amount_paid'])));
+      }
+
       final r = await s.execute(
         Sql.named('''
           UPDATE purchase_invoice SET
             invoice_no = @invoice_no, invoice_date = @invoice_date,
             company_id = @company_id, company_name = @company_name,
-            reference = @reference, notes = @notes,
+            reference = @reference, notes = @notes, amount_paid = @amount_paid,
             subtotal = @subtotal, discount_total = @discount_total,
             tax_total = @tax_total, grand_total = @grand_total
           WHERE id = @id
@@ -205,12 +225,24 @@ class PurchaseDataSource {
         parameters: p.toMap(),
       );
       final items = await _replaceItems(s, p.id!, p.items);
+      await _adjustCompanyBalance(s, p.companyId, p.grandTotal - p.amountPaid);
       return PurchaseModel.fromMap(r.first.toColumnMap(), items: items);
     });
   }
 
   Future<void> delete(int id) {
     return _conn.runTx((s) async {
+      // Undo this invoice's effect on the company's balance.
+      final prev = await s.execute(
+        Sql.named('SELECT company_id, grand_total, amount_paid '
+            'FROM purchase_invoice WHERE id = @id'),
+        parameters: {'id': id},
+      );
+      if (prev.isNotEmpty) {
+        final m = prev.first.toColumnMap();
+        await _adjustCompanyBalance(s, m['company_id'] as int?,
+            -(_num(m['grand_total']) - _num(m['amount_paid'])));
+      }
       // Roll the invoice's lines back out of stock before removing them.
       await _stockOut(s, id);
       await s.execute(
@@ -223,6 +255,23 @@ class PurchaseDataSource {
         parameters: {'id': id},
       );
     });
+  }
+
+  static double _num(Object? v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse('$v') ?? 0;
+  }
+
+  /// Adds [delta] (may be negative) to `company.opening_balance` for
+  /// [companyId]. No-op for a free-typed invoice with no company.
+  Future<void> _adjustCompanyBalance(
+      Session s, int? companyId, double delta) async {
+    if (companyId == null || delta == 0) return;
+    await s.execute(
+      Sql.named('UPDATE company SET opening_balance = opening_balance + @d '
+          'WHERE id = @id'),
+      parameters: {'d': delta, 'id': companyId},
+    );
   }
 
   /// Deletes the invoice's existing lines and inserts [items] fresh, returning

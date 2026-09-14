@@ -90,7 +90,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     }
   }
 
-  Future<void> _confirmDelete(String label, String name, Future<void> Function() onDelete) async {
+  Future<void> _confirmDelete(String label, String name, Future<bool> Function() onDelete) async {
     final yes = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -106,7 +106,13 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         ],
       ),
     );
-    if (yes == true) await onDelete();
+    if (yes != true) return;
+    final ok = await onDelete();
+    if (!mounted) return;
+    if (!ok && _provider.error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_provider.error!)));
+    }
   }
 
   @override

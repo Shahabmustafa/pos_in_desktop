@@ -133,6 +133,12 @@ class PurchaseReturnDataSource {
       }
 
       if (_isFullReturn(invoice, selections)) {
+        // Reverse the whole invoice's effect on the company's balance.
+        await _adjustCompanyBalance(
+          tx,
+          invoice.companyId,
+          -(invoice.grandTotal - invoice.amountPaid),
+        );
         await tx.execute(
           Sql.named('DELETE FROM purchase_invoice_item '
               'WHERE purchase_invoice_id = @id'),
@@ -230,6 +236,14 @@ class PurchaseReturnDataSource {
         'grand_total': shrunk.grandTotal,
       },
     );
+
+    // Mirror a normal invoice edit: with the amount already paid unchanged,
+    // the company's balance moves by the change in the invoice total.
+    await _adjustCompanyBalance(
+      tx,
+      invoice.companyId,
+      shrunk.grandTotal - invoice.grandTotal,
+    );
   }
 
   /// Inserts a `purchase_return` header (with a server-assigned `PR-xxxxxx`
@@ -282,6 +296,17 @@ class PurchaseReturnDataSource {
 
   static String _invoiceLabel(PurchaseModel i) =>
       i.invoiceNo.trim().isNotEmpty ? i.invoiceNo.trim() : 'invoice #${i.id}';
+
+  /// Adds [delta] (may be negative) to `company.opening_balance`.
+  Future<void> _adjustCompanyBalance(
+      TxSession tx, int? companyId, double delta) async {
+    if (companyId == null || delta == 0) return;
+    await tx.execute(
+      Sql.named('UPDATE company SET opening_balance = opening_balance + @d '
+          'WHERE id = @id'),
+      parameters: {'d': delta, 'id': companyId},
+    );
+  }
 
   /// Adds [delta] (may be negative) to `stock_item.quantity` for [productId].
   Future<void> _addStock(TxSession tx, int? productId, double delta) async {

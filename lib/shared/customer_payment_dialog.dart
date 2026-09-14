@@ -13,9 +13,10 @@ class CustomerPaymentResult {
   final double payAmount;
 }
 
-/// Confirmation shown when a sale invoice / sale return is saved for a real
-/// customer. Lets the operator enter how much is paid now; the remainder is
-/// added to the customer's `opening_balance`.
+/// Confirmation shown when a sale invoice / sale return (customer) or a
+/// purchase invoice (company) is saved for a real party. Lets the operator
+/// enter how much is paid now; the remainder is added to the party's running
+/// balance.
 ///
 /// Returns `null` when the operator cancels.
 Future<CustomerPaymentResult?> showCustomerPaymentDialog(
@@ -25,6 +26,8 @@ Future<CustomerPaymentResult?> showCustomerPaymentDialog(
   required double totalAmount,
   required String totalLabel,
   required String actionLabel,
+  String partyLabel = 'Customer',
+  String icon = AppIcons.person_outline,
   Color accent = const Color(0xFF2E7D32),
 }) {
   return showDialog<CustomerPaymentResult>(
@@ -36,6 +39,8 @@ Future<CustomerPaymentResult?> showCustomerPaymentDialog(
       totalAmount: totalAmount,
       totalLabel: totalLabel,
       actionLabel: actionLabel,
+      partyLabel: partyLabel,
+      icon: icon,
       accent: accent,
     ),
   );
@@ -48,6 +53,8 @@ class _CustomerPaymentDialog extends StatefulWidget {
     required this.totalAmount,
     required this.totalLabel,
     required this.actionLabel,
+    required this.partyLabel,
+    required this.icon,
     required this.accent,
   });
 
@@ -56,6 +63,11 @@ class _CustomerPaymentDialog extends StatefulWidget {
   final double totalAmount;
   final String totalLabel;
   final String actionLabel;
+
+  /// e.g. 'Customer' (Sale Invoice / Sale Return) or 'Company' (Purchase
+  /// Invoice).
+  final String partyLabel;
+  final String icon;
   final Color accent;
 
   @override
@@ -90,7 +102,7 @@ class _CustomerPaymentDialogState extends State<_CustomerPaymentDialog> {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Row(children: [
-        AppIcon(AppIcons.person_outline, size: 20, color: widget.accent),
+        AppIcon(widget.icon, size: 20, color: widget.accent),
         const SizedBox(width: 8),
         const Text('Confirm payment'),
       ]),
@@ -99,7 +111,7 @@ class _CustomerPaymentDialogState extends State<_CustomerPaymentDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _row(scheme, 'Customer', widget.customerName, strong: true),
+            _row(scheme, widget.partyLabel, widget.customerName, strong: true),
             const SizedBox(height: 6),
             _row(scheme, 'Previous amount', Fmt.money(widget.previousBalance)),
             _row(scheme, widget.totalLabel, Fmt.money(widget.totalAmount)),
@@ -127,8 +139,8 @@ class _CustomerPaymentDialogState extends State<_CustomerPaymentDialog> {
                         ? const Color(0xFF2E7D32)
                         : null),
             const Divider(height: 18),
-            _row(scheme, 'Total customer amount', Fmt.money(_newBalance),
-                strong: true, color: widget.accent),
+            _row(scheme, 'Total ${widget.partyLabel.toLowerCase()} amount',
+                Fmt.money(_newBalance), strong: true, color: widget.accent),
           ],
         ),
       ),

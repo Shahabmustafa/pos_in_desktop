@@ -97,6 +97,11 @@ class ProductCatalogProvider extends ChangeNotifier {
     if (t.contains('23505')) {
       return 'That name already exists. Pick a different one.';
     }
+    if (t.contains('23503')) {
+      return 'This is assigned to one or more products and cannot be '
+          'deleted. Mark it inactive instead, or reassign those products '
+          'first.';
+    }
     if (t.contains('42501')) {
       return 'Permission denied. Run '
           'lib/features/product_catalog/data/sql/product_catalog.sql as a '

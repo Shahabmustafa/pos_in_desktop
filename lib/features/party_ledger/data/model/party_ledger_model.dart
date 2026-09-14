@@ -21,12 +21,11 @@ enum LedgerKind {
 /// A `{id, name}` reference plus the party's stored balance, used to fill the
 /// picker and to anchor the running balance.
 ///
-/// * For a **customer** [storedBalance] is `customer.opening_balance`, which the
-///   sale-invoice / sale-return datasources keep as the *live* receivable — so
-///   here it is treated as the ledger's **closing** figure and the opening is
-///   worked back from it (the same trick the Stock report uses).
-/// * For a **company** [storedBalance] is `company.opening_balance`, a true
-///   opening that nothing mutates, so it anchors the ledger from the front.
+/// For both kinds [storedBalance] (`customer.opening_balance` /
+/// `company.opening_balance`) is a *live* running balance — kept current by
+/// the sale/purchase invoice, return and standalone-payment datasources — so
+/// it is treated as the ledger's **closing** figure and the opening is worked
+/// back from it (the same trick the Stock report uses).
 class PartyRef {
   const PartyRef({
     required this.id,
@@ -121,10 +120,11 @@ class PartyLedger {
   /// Orders [moves], folds everything before [from] into the opening balance,
   /// keeps the rows within `[from, to]`, and walks the running balance forward.
   ///
-  /// [anchor] is the number we trust: for a customer it is the stored
-  /// `opening_balance`, which is really the live **closing** balance, so
-  /// [anchorIsClosing] is `true` and the opening is worked back from it. For a
-  /// company it is a genuine opening and [anchorIsClosing] is `false`.
+  /// [anchor] is the number we trust — the stored `opening_balance`, which is
+  /// really a live **closing** balance for both customer and company, so
+  /// [anchorIsClosing] is `true` and the opening is worked back from it.
+  /// (Kept as a parameter rather than hard-coded in case a party kind with a
+  /// genuine, never-mutated opening balance is added later.)
   static PartyLedger assemble({
     required LedgerKind kind,
     required String partyName,

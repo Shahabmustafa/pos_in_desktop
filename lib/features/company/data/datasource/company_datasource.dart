@@ -26,8 +26,40 @@ class CompanyDataSource {
           created_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
         )
       ''');
+      await Database.instance.connection.execute(
+        'ALTER TABLE company ADD COLUMN IF NOT EXISTS '
+        'balance_migrated BOOLEAN NOT NULL DEFAULT FALSE',
+      );
     } on ServerException catch (e) {
       if (e.code != '42501') rethrow;
+    }
+    await _migrateHistoricalBalances();
+  }
+
+  /// One-time backfill for the 2026-09-13 switch to a live
+  /// `company.opening_balance` (previously a static opening that purchase
+  /// invoices/returns/payments never touched — see `PurchaseDataSource`,
+  /// `PurchaseReturnDataSource`, `CompanyPaymentDataSource`). Folds every
+  /// company's *pre-existing* purchase history into its opening balance
+  /// exactly once (`balance_migrated` guards against re-running and
+  /// double-counting); every purchase invoice/return/payment from here on
+  /// keeps it live by mutating it directly. No-ops once already migrated, and
+  /// swallows a missing `purchase_invoice` / `purchase_return` /
+  /// `company_payment` table (nothing to backfill yet).
+  Future<void> _migrateHistoricalBalances() async {
+    try {
+      await Database.instance.connection.execute('''
+        UPDATE company c SET
+          opening_balance = opening_balance
+            + COALESCE((SELECT SUM(grand_total) FROM purchase_invoice WHERE company_id = c.id), 0)
+            - COALESCE((SELECT SUM(amount_paid) FROM purchase_invoice WHERE company_id = c.id), 0)
+            - COALESCE((SELECT SUM(grand_total) FROM purchase_return WHERE company_id = c.id), 0)
+            - COALESCE((SELECT SUM(amount) FROM company_payment WHERE company_id = c.id), 0),
+          balance_migrated = TRUE
+        WHERE c.balance_migrated = FALSE
+      ''');
+    } on ServerException catch (e) {
+      if (e.code != '42P01' && e.code != '42703' && e.code != '42501') rethrow;
     }
   }
 

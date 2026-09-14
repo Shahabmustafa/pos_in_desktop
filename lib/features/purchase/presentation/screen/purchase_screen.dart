@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pos/shared/app_icon.dart';
 
+import '../../../../shared/customer_payment_dialog.dart';
 import '../../../../shared/feature_ui.dart';
 import '../../../../shared/pos_invoice_builder.dart';
 import '../../../../shared/receipt/receipt_printer.dart';
@@ -40,25 +41,58 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Future<bool> _save(PosInvoiceDraft draft) async {
+    final items = [
+      for (final l in draft.lines)
+        PurchaseItemModel(
+          productId: l.product.id,
+          productName: l.product.name,
+          barcode: l.product.barcode,
+          unit: l.product.unit,
+          quantity: l.quantity,
+          purchasePrice: l.price,
+          salePrice: l.salePrice,
+          discount: l.discount,
+          tax: l.tax,
+        ),
+    ];
+    final grandTotal = items.fold<double>(0, (a, i) => a + i.lineTotal);
+
+    // For a real supplier, confirm how much is paid now; the rest is left on
+    // the company's balance. The dialog shows the company's static opening
+    // balance (not the live running payable — see PurchaseDataSource.
+    // fetchCompanies for that figure, still used elsewhere e.g. Pay Company).
+    final companyId = draft.party?.id;
+    double amountPaid = grandTotal;
+    if (companyId != null) {
+      double previousBalance = 0;
+      for (final c in _provider.companies) {
+        if (c.id == companyId) {
+          previousBalance = c.openingBalance;
+          break;
+        }
+      }
+      final result = await showCustomerPaymentDialog(
+        context,
+        customerName: draft.party!.name,
+        previousBalance: previousBalance,
+        totalAmount: grandTotal,
+        totalLabel: 'Total purchase amount',
+        actionLabel: 'Save Invoice',
+        partyLabel: 'Company',
+        icon: AppIcons.business_outlined,
+        accent: const Color(0xFF2196F3),
+      );
+      if (result == null) return false; // cancelled
+      amountPaid = result.payAmount;
+    }
+
     final model = PurchaseModel(
       date: draft.date,
-      companyId: draft.party?.id,
+      companyId: companyId,
       companyName: draft.party?.name ?? '',
       notes: draft.notes,
-      items: [
-        for (final l in draft.lines)
-          PurchaseItemModel(
-            productId: l.product.id,
-            productName: l.product.name,
-            barcode: l.product.barcode,
-            unit: l.product.unit,
-            quantity: l.quantity,
-            purchasePrice: l.price,
-            salePrice: l.salePrice,
-            discount: l.discount,
-            tax: l.tax,
-          ),
-      ],
+      amountPaid: amountPaid,
+      items: items,
     );
     final ok = await _provider.save(model);
     if (!mounted) return ok;
@@ -107,6 +141,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         discountTotal: p.discountTotal,
         taxTotal: p.taxTotal,
         grandTotal: p.grandTotal,
+        extraTotals: [
+          ReceiptTotal('Paid', p.amountPaid),
+          if (p.balanceDue.abs() > 0.009)
+            ReceiptTotal('Balance', p.balanceDue, bold: true),
+        ],
       );
 
   @override
