@@ -25,6 +25,7 @@ class _FakeDataSource extends ReportsDataSource {
           DateTime from, DateTime to) async =>
       [
         SaleReportInvoice(
+          id: 1,
           invoiceNo: 'SI-0001',
           date: DateTime(2026, 9, 3),
           customer: 'Ali Traders',
