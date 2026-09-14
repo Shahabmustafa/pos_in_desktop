@@ -86,7 +86,7 @@ class _SaleReturnScreenState extends State<SaleReturnScreen> {
     }
   }
 
-  /// Builds the 80mm receipt for a just-recorded sale return. Mirrors the
+  /// Builds the A4 invoice for a just-recorded sale return. Mirrors the
   /// per-line maths in `SaleReturnDataSource.returnFromInvoice` (flat discount
   /// pro-rated to the returned share).
   ReceiptData _returnReceipt(

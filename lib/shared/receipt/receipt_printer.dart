@@ -8,9 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/sale_invoice/data/model/sale_invoice_model.dart';
 import 'sale_receipt.dart';
 
-/// Sends receipts to a system-installed (USB / network) thermal printer.
+/// Sends invoices to a system-installed (USB / network) A4 printer.
 ///
-/// The first receipt after install shows the OS printer picker; the chosen
+/// The first invoice after install shows the OS printer picker; the chosen
 /// printer is remembered so every later sale prints silently.
 class ReceiptPrinter {
   ReceiptPrinter._();
@@ -20,7 +20,7 @@ class ReceiptPrinter {
   static const _kPrinterUrl = 'receipt_printer_url';
   static const _kPrinterName = 'receipt_printer_name';
 
-  static final PdfPageFormat _roll = PdfPageFormat.roll80;
+  static final PdfPageFormat _pageFormat = PdfPageFormat.a4;
 
   /// Name of the printer receipts currently go to, if one has been chosen.
   Future<String?> selectedPrinterName() async {
@@ -50,11 +50,16 @@ class ReceiptPrinter {
   /// once a printer is remembered; otherwise it prompts once (picker), then
   /// remembers the choice. Any failure is reported through [onError] rather than
   /// thrown, so a print problem never blocks the transaction.
+  ///
+  /// [pageFormat] is the paper size requested from the printer/OS — defaults
+  /// to A4 (invoices); pass `PdfPageFormat.roll80` for a barcode label.
   Future<void> printReceipt(
     BuildContext context,
     Future<Uint8List> pdfBytes, {
     void Function(String message)? onError,
+    PdfPageFormat? pageFormat,
   }) async {
+    final format = pageFormat ?? _pageFormat;
     try {
       final bytes = await pdfBytes;
       final prefs = await SharedPreferences.getInstance();
@@ -65,8 +70,7 @@ class ReceiptPrinter {
         final picked = await Printing.pickPrinter(context: context);
         if (picked == null) {
           // No printer chosen — fall back to the OS print dialog this once.
-          await Printing.layoutPdf(
-              onLayout: (_) async => bytes, format: _roll);
+          await Printing.layoutPdf(onLayout: (_) async => bytes, format: format);
           return;
         }
         url = picked.url;
@@ -78,14 +82,14 @@ class ReceiptPrinter {
         await Printing.directPrintPdf(
           printer: Printer(url: url),
           onLayout: (_) async => bytes,
-          format: _roll,
+          format: format,
           usePrinterSettings: true,
         );
       } catch (_) {
         // Stored printer gone / offline — reset and show the dialog.
         await prefs.remove(_kPrinterUrl);
         await prefs.remove(_kPrinterName);
-        await Printing.layoutPdf(onLayout: (_) async => bytes, format: _roll);
+        await Printing.layoutPdf(onLayout: (_) async => bytes, format: format);
       }
     } catch (e) {
       onError?.call('Could not print the receipt: $e');

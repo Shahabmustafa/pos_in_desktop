@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:pos/shared/app_icon.dart';
 
 import '../../../../config/theme/app_theme.dart';
-import '../../../../shared/customer_payment_dialog.dart';
 import '../../../../shared/feature_ui.dart';
 import '../../../../shared/pos_invoice_builder.dart';
 import '../../../../shared/receipt/receipt_printer.dart';
@@ -61,31 +60,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     ];
     final grandTotal = items.fold<double>(0, (a, i) => a + i.lineTotal);
 
-    // For a real (non walk-in) customer, confirm how much is paid now; the
-    // rest is added to their balance.
+    // Walk-in (or no customer) sales are paid in full at the counter; a real
+    // customer's sale goes straight to their credit — collect it later from
+    // Receive Payment.
     final customerId = draft.party?.id;
     final walkInId = _provider.walkInCustomer?.id;
-    double amountReceived = grandTotal;
-    if (customerId != null && customerId != walkInId) {
-      double previousBalance = 0;
-      for (final c in _provider.customers) {
-        if (c.id == customerId) {
-          previousBalance = c.openingBalance;
-          break;
-        }
-      }
-      final result = await showCustomerPaymentDialog(
-        context,
-        customerName: draft.party!.name,
-        previousBalance: previousBalance,
-        totalAmount: grandTotal,
-        totalLabel: 'Total sale amount',
-        actionLabel: 'Save Invoice',
-        accent: const Color(0xFF2E7D32),
-      );
-      if (result == null) return false; // cancelled
-      amountReceived = result.payAmount;
-    }
+    final amountReceived =
+        (customerId != null && customerId != walkInId) ? 0.0 : grandTotal;
 
     final model = SaleInvoiceModel(
       date: draft.date,
@@ -102,7 +83,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Sale invoice saved')),
       );
-      // Print the receipt on the thermal printer (never blocks the sale) —
+      // Print the invoice on the printer (never blocks the sale) —
       // only when the operator left the "Print receipt" checkbox ticked.
       final saved = _provider.lastSaved;
       if (saved != null && draft.printReceipt) {

@@ -82,7 +82,7 @@ class _PurchaseReturnScreenState extends State<PurchaseReturnScreen> {
     }
   }
 
-  /// Builds the 80mm receipt for a just-recorded purchase return. Mirrors the
+  /// Builds the A4 invoice for a just-recorded purchase return. Mirrors the
   /// per-line maths in `PurchaseReturnDataSource.returnFromInvoice`.
   ReceiptData _returnReceipt(
     PurchaseModel invoice,

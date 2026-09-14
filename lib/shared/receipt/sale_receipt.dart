@@ -7,7 +7,7 @@ import '../../config/format.dart';
 import '../../features/receipt_settings/data/model/receipt_settings_model.dart';
 import '../../features/sale_invoice/data/model/sale_invoice_model.dart';
 
-/// One printed line on a receipt.
+/// One printed line on an invoice.
 class ReceiptLine {
   const ReceiptLine({
     required this.name,
@@ -15,6 +15,7 @@ class ReceiptLine {
     required this.unitPrice,
     required this.lineTotal,
     this.discountAmount = 0,
+    this.unit = '',
   });
 
   final String name;
@@ -22,6 +23,9 @@ class ReceiptLine {
   final double unitPrice;
   final double lineTotal;
   final double discountAmount;
+
+  /// Selling unit (e.g. `pcs`, `kg`) — printed next to the quantity.
+  final String unit;
 }
 
 /// An extra totals row printed under Subtotal / Discount / Tax (e.g. "Paid",
@@ -34,7 +38,7 @@ class ReceiptTotal {
   final bool bold;
 }
 
-/// Everything the generic 80mm receipt needs — sale invoice, purchase, return
+/// Everything the generic A4 invoice needs — sale invoice, purchase, return
 /// and exchange all build one of these.
 class ReceiptData {
   const ReceiptData({
@@ -70,11 +74,11 @@ class ReceiptData {
   final double grandTotal;
   final String grandTotalLabel;
 
-  /// Invoice notes. Printed in the header block only when it is non-empty and
-  /// the "Invoice notes" toggle is on in Receipt Settings.
+  /// Invoice notes. Printed under the info grid when non-empty and the
+  /// "Invoice notes" toggle is on in Receipt Settings.
   final String notes;
 
-  /// Extra `key: value` rows in the header block (e.g. `Against: SI-000042`).
+  /// Extra `key: value` columns in the info grid (e.g. `Against: SI-000042`).
   final List<(String, String)> extraInfo;
 
   /// Extra totals rows under Tax (e.g. Paid / Balance).
@@ -84,7 +88,7 @@ class ReceiptData {
   double get totalQuantity => lines.fold(0, (a, l) => a + l.quantity);
 }
 
-/// Builds an 80mm thermal-receipt PDF for a saved [SaleInvoiceModel].
+/// Builds an A4 invoice PDF for a saved [SaleInvoiceModel].
 Future<Uint8List> buildSaleReceiptPdf(SaleInvoiceModel invoice) {
   return buildReceiptPdf(ReceiptData(
     docType: 'SALE INVOICE',
@@ -100,6 +104,7 @@ Future<Uint8List> buildSaleReceiptPdf(SaleInvoiceModel invoice) {
           unitPrice: it.salePrice,
           lineTotal: it.lineTotal,
           discountAmount: it.discountAmount,
+          unit: it.unit,
         ),
     ],
     subtotal: invoice.subtotal,
@@ -115,175 +120,241 @@ Future<Uint8List> buildSaleReceiptPdf(SaleInvoiceModel invoice) {
   ));
 }
 
-/// Builds an 80mm thermal-receipt PDF from a ready-made [ReceiptData].
-///
-/// The page is a single continuous roll (`PdfPageFormat.roll80`) so the printer
-/// only feeds as much paper as the content needs.
+/// Builds an A4 tabular invoice PDF (shop header, an info grid, a bordered
+/// item table and a totals block) from a ready-made [ReceiptData] — meant for
+/// a plain A4 printer, no thermal printer required. Long item lists flow onto
+/// extra pages automatically, repeating the shop header and table columns.
 Future<Uint8List> buildReceiptPdf(ReceiptData data) async {
-  // Built-in Helvetica — no network fetch, works fully offline on the till.
+  // Built-in Helvetica — no network fetch, works fully offline.
   final doc = pw.Document();
   final theme = pw.ThemeData.withFont(
     base: pw.Font.helvetica(),
     bold: pw.Font.helveticaBold(),
   );
 
-  final d = data.date;
-  final dateStr = '${Fmt.date(d)}  '
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-
   // Shop header + which fields to print — configured on the Receipt Settings
   // screen, cached in ReceiptSettingsModel.current.
   final s = ReceiptSettingsModel.current;
-  final showItemDiscount = s.showItemDiscount;
+  final dateStr = Fmt.date(data.date);
+  final showDiscountCol =
+      s.showItemDiscount && data.lines.any((l) => l.discountAmount > 0);
 
-  doc.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.roll80.copyWith(
-        marginLeft: 4 * PdfPageFormat.mm,
-        marginRight: 4 * PdfPageFormat.mm,
-        marginTop: 5 * PdfPageFormat.mm,
-        marginBottom: 5 * PdfPageFormat.mm,
-      ),
-      theme: theme,
-      build: (context) => pw.Column(
+  pw.Widget header(pw.Context context) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           if (s.showLogo && s.logo != null) ...[
             pw.Center(
-              child: pw.Image(
-                pw.MemoryImage(s.logo!),
-                height: 40,
-                fit: pw.BoxFit.contain,
-              ),
+              child: pw.Image(pw.MemoryImage(s.logo!),
+                  height: 46, fit: pw.BoxFit.contain),
             ),
             pw.SizedBox(height: 4),
           ],
           if (s.businessName.trim().isNotEmpty)
             pw.Center(
-              child: pw.Text(
-                s.businessName,
-                style:
-                    pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-              ),
+              child: pw.Text(s.businessName,
+                  style: pw.TextStyle(
+                      fontSize: 18, fontWeight: pw.FontWeight.bold)),
             ),
           if (s.businessAddress.trim().isNotEmpty)
             pw.Center(
                 child: pw.Text(s.businessAddress,
-                    style: _small, textAlign: pw.TextAlign.center)),
+                    style: _normal, textAlign: pw.TextAlign.center)),
           if (s.businessPhone.trim().isNotEmpty)
-            pw.Center(child: pw.Text(s.businessPhone, style: _small)),
-          pw.SizedBox(height: 4),
-          pw.Center(
+            pw.Center(child: pw.Text(s.businessPhone, style: _normal)),
+          pw.SizedBox(height: 8),
+          pw.Container(
+            width: double.infinity,
+            alignment: pw.Alignment.center,
+            padding: const pw.EdgeInsets.symmetric(vertical: 5),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                top: pw.BorderSide(width: 1),
+                bottom: pw.BorderSide(width: 1),
+              ),
+            ),
             child: pw.Text(data.docType,
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                    letterSpacing: 1)),
           ),
-          pw.SizedBox(height: 4),
-          if (s.showInvoiceNo)
-            _kv(data.docType.contains('RETURN') ? 'Return' : 'Invoice',
-                data.invoiceNo.isEmpty ? '-' : data.invoiceNo),
-          if (s.showDate) _kv('Date', dateStr),
-          if (s.showParty)
-            _kv(data.partyLabel,
-                data.partyName.isEmpty ? '-' : data.partyName),
-          if (s.showNotes && data.notes.trim().isNotEmpty)
-            _kv('Notes', data.notes.trim()),
-          for (final info in data.extraInfo) _kv(info.$1, info.$2),
-          _dividerLine(),
-          // Column header
-          pw.Row(children: [
-            pw.Expanded(flex: 5, child: pw.Text('Item', style: _smallBold)),
-            pw.Expanded(
-                flex: 2,
-                child: pw.Text('Qty',
-                    style: _smallBold, textAlign: pw.TextAlign.right)),
-            pw.Expanded(
-                flex: 3,
-                child: pw.Text('Price',
-                    style: _smallBold, textAlign: pw.TextAlign.right)),
-            pw.Expanded(
-                flex: 3,
-                child: pw.Text('Total',
-                    style: _smallBold, textAlign: pw.TextAlign.right)),
-          ]),
-          pw.SizedBox(height: 2),
-          for (final it in data.lines) ...[
-            pw.Text(it.name, style: _small),
-            pw.Row(children: [
-              pw.Expanded(flex: 5, child: pw.SizedBox()),
-              pw.Expanded(
-                  flex: 2,
-                  child: pw.Text(_num(it.quantity),
-                      style: _small, textAlign: pw.TextAlign.right)),
-              pw.Expanded(
-                  flex: 3,
-                  child: pw.Text(Fmt.money(it.unitPrice),
-                      style: _small, textAlign: pw.TextAlign.right)),
-              pw.Expanded(
-                  flex: 3,
-                  child: pw.Text(Fmt.money(it.lineTotal, decimals: true),
-                      style: _small, textAlign: pw.TextAlign.right)),
-            ]),
-            if (it.discountAmount > 0 && showItemDiscount)
-              pw.Text('  discount -${Fmt.money(it.discountAmount, decimals: true)}',
-                  style: _small),
-          ],
-          _dividerLine(),
-          _total('Subtotal', data.subtotal),
-          if (data.discountTotal > 0 && s.showDiscountTotal)
-            _total('Discount', -data.discountTotal),
-          if (data.taxTotal > 0 && s.showTaxTotal)
-            _total('Tax', data.taxTotal),
-          pw.SizedBox(height: 2),
-          _total(data.grandTotalLabel, data.grandTotal, bold: true),
-          if (s.showPaidBalance)
-            for (final t in data.extraTotals)
-              _total(t.label, t.value, bold: t.bold),
-          if (s.showFooter && s.footerText.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 6),
-            pw.Center(
-                child: pw.Text(s.footerText.trim(),
-                    style: _small, textAlign: pw.TextAlign.center)),
-          ],
-          if (s.showItemCount) ...[
+          pw.SizedBox(height: 8),
+          _infoGrid(data, s, dateStr),
+          if (s.showNotes && data.notes.trim().isNotEmpty) ...[
             pw.SizedBox(height: 4),
-            pw.Center(
-                child: pw.Text('${data.itemCount} item(s)  -  '
-                    '${_num(data.totalQuantity)} unit(s)', style: _small)),
+            pw.Text('Notes: ${data.notes.trim()}', style: _small),
           ],
+          pw.SizedBox(height: 10),
         ],
+      );
+
+  doc.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.fromLTRB(28, 24, 28, 24),
+      theme: theme,
+      header: header,
+      footer: (context) => pw.Align(
+        alignment: pw.Alignment.centerRight,
+        child: pw.Text('Page ${context.pageNumber} of ${context.pagesCount}',
+            style: _tiny),
       ),
+      build: (context) => [
+        _itemsTable(context, data, showDiscountCol),
+        pw.SizedBox(height: 10),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.end,
+          children: [
+            pw.SizedBox(
+              width: 220,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  _totalRow('Subtotal', data.subtotal),
+                  if (data.discountTotal > 0 && s.showDiscountTotal)
+                    _totalRow('Discount', -data.discountTotal),
+                  if (data.taxTotal > 0 && s.showTaxTotal)
+                    _totalRow('Tax', data.taxTotal),
+                  pw.Divider(height: 8, thickness: 0.75),
+                  _totalRow(data.grandTotalLabel, data.grandTotal, bold: true),
+                  if (s.showPaidBalance)
+                    for (final t in data.extraTotals)
+                      _totalRow(t.label, t.value, bold: t.bold),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (s.showFooter && s.footerText.trim().isNotEmpty) ...[
+          pw.SizedBox(height: 20),
+          pw.Center(
+              child: pw.Text(s.footerText.trim(),
+                  style: _normal, textAlign: pw.TextAlign.center)),
+        ],
+        if (s.showItemCount) ...[
+          pw.SizedBox(height: 8),
+          pw.Text(
+              '${data.itemCount} item(s)  -  ${_num(data.totalQuantity)} unit(s)',
+              style: _small),
+        ],
+      ],
     ),
   );
 
   return doc.save();
 }
 
-final pw.TextStyle _small = const pw.TextStyle(fontSize: 8);
-final pw.TextStyle _smallBold =
-    pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
+/// A small bordered header/value grid: party, invoice no., date, plus any
+/// [ReceiptData.extraInfo] pairs (e.g. "Against: SI-000042" on a return).
+pw.Widget _infoGrid(ReceiptData data, ReceiptSettingsModel s, String dateStr) {
+  final headers = <String>[];
+  final values = <String>[];
 
-pw.Widget _kv(String k, String v) => pw.Row(children: [
-      pw.Text('$k: ', style: _small),
-      pw.Expanded(child: pw.Text(v, style: _small)),
-    ]);
+  if (s.showParty) {
+    headers.add(data.partyLabel);
+    values.add(data.partyName.isEmpty ? '-' : data.partyName);
+  }
+  if (s.showInvoiceNo) {
+    headers.add(data.docType.contains('RETURN') ? 'Return No.' : 'Invoice No.');
+    values.add(data.invoiceNo.isEmpty ? '-' : data.invoiceNo);
+  }
+  if (s.showDate) {
+    headers.add('Dated');
+    values.add(dateStr);
+  }
+  for (final info in data.extraInfo) {
+    headers.add(info.$1);
+    values.add(info.$2);
+  }
+  if (headers.isEmpty) return pw.SizedBox();
 
-pw.Widget _total(String label, double value, {bool bold = false}) {
-  final style = bold
-      ? pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)
-      : _small;
-  return pw.Row(
-    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-    children: [
-      pw.Text(label, style: style),
-      pw.Text(Fmt.money(value, decimals: true), style: style),
-    ],
+  return pw.TableHelper.fromTextArray(
+    headers: headers,
+    data: [values],
+    border: pw.TableBorder.all(width: 0.75, color: PdfColors.grey700),
+    headerStyle:
+        pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+    headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+    headerAlignment: pw.Alignment.centerLeft,
+    cellStyle: _normal,
+    cellAlignment: pw.Alignment.centerLeft,
+    cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
   );
 }
 
-pw.Widget _dividerLine() => pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 3),
-      child: pw.Divider(height: 0.5, thickness: 0.5),
-    );
+/// The bordered item table: No. | Description of Goods | Qty | Rate |
+/// [Discount] | Amount. Splits across pages automatically for a long invoice,
+/// repeating the column header on each new page.
+pw.Widget _itemsTable(
+    pw.Context context, ReceiptData data, bool showDiscountCol) {
+  final amountCol = showDiscountCol ? 5 : 4;
+  return pw.TableHelper.fromTextArray(
+    context: context,
+    headers: [
+      'No.',
+      'Description of Goods',
+      'Qty',
+      'Rate',
+      if (showDiscountCol) 'Discount',
+      'Amount',
+    ],
+    data: [
+      for (var i = 0; i < data.lines.length; i++)
+        [
+          '${i + 1}',
+          data.lines[i].name,
+          _qtyWithUnit(data.lines[i].quantity, data.lines[i].unit),
+          Fmt.money(data.lines[i].unitPrice),
+          if (showDiscountCol)
+            Fmt.money(data.lines[i].discountAmount, decimals: true),
+          Fmt.money(data.lines[i].lineTotal, decimals: true),
+        ],
+    ],
+    border: pw.TableBorder.all(width: 0.75, color: PdfColors.grey700),
+    headerStyle: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+    headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+    cellStyle: _normal,
+    cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+    cellAlignments: {
+      0: pw.Alignment.center,
+      2: pw.Alignment.centerRight,
+      3: pw.Alignment.centerRight,
+      if (showDiscountCol) 4: pw.Alignment.centerRight,
+      amountCol: pw.Alignment.centerRight,
+    },
+    columnWidths: {
+      0: const pw.FixedColumnWidth(28),
+      1: const pw.FlexColumnWidth(4.6),
+      2: const pw.FlexColumnWidth(1.8),
+      3: const pw.FlexColumnWidth(1.6),
+      if (showDiscountCol) 4: const pw.FlexColumnWidth(1.6),
+      amountCol: const pw.FlexColumnWidth(1.8),
+    },
+  );
+}
+
+pw.Widget _totalRow(String label, double value, {bool bold = false}) {
+  final style = bold
+      ? pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)
+      : _normal;
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 2),
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(label, style: style),
+        pw.Text(Fmt.money(value, decimals: true), style: style),
+      ],
+    ),
+  );
+}
+
+final pw.TextStyle _normal = const pw.TextStyle(fontSize: 9.5);
+final pw.TextStyle _small = const pw.TextStyle(fontSize: 8.5);
+final pw.TextStyle _tiny = pw.TextStyle(fontSize: 8, color: PdfColors.grey600);
 
 String _num(double v) =>
     v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
+String _qtyWithUnit(double v, String unit) =>
+    unit.trim().isEmpty ? _num(v) : '${_num(v)} ${unit.trim()}';

@@ -11,9 +11,9 @@ import '../../data/model/receipt_settings_model.dart';
 import '../provider/receipt_settings_provider.dart';
 import '../widget/receipt_preview.dart';
 
-/// Receipt Settings: edit the shop header printed on every 80mm thermal
-/// receipt and toggle which invoice fields appear on it. A live preview on the
-/// right updates as you type.
+/// Receipt Settings: edit the shop header printed on every A4 invoice and
+/// toggle which invoice fields appear on it. A live preview on the right
+/// updates as you type.
 class ReceiptSettingsScreen extends StatefulWidget {
   const ReceiptSettingsScreen({super.key, this.provider});
 
@@ -283,7 +283,7 @@ class _PreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SectionCard(
       title: 'Live preview',
-      subtitle: '80mm thermal receipt',
+      subtitle: 'A4 printed invoice',
       child: Center(child: child),
     );
   }

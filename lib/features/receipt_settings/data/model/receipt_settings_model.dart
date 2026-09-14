@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Shop header + per-field show / hide flags for the 80mm thermal receipt.
+/// Shop header + per-field show / hide flags for the A4 printed invoice.
 ///
 /// Stored as a single row (`receipt_settings`, id = 1). Every receipt builder
 /// reads [current] — a process-wide cached copy refreshed at startup and after

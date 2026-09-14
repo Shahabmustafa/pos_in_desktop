@@ -4,6 +4,8 @@ import 'package:pos/shared/app_icon.dart';
 import '../../../../config/format.dart';
 import '../../../../shared/export/export_button.dart';
 import '../../../../shared/feature_ui.dart';
+import '../../../../shared/receipt/receipt_printer.dart';
+import '../../../sale_invoice/data/repository/sale_invoice_repository.dart';
 import '../../data/model/reports_model.dart';
 import '../provider/reports_provider.dart';
 import 'reports_export.dart';
@@ -159,6 +161,39 @@ Widget _viewButton(VoidCallback onPressed) => IconButton(
       onPressed: onPressed,
     );
 
+/// Compact "print this invoice" action for a table row.
+Widget _printButton(VoidCallback onPressed) => IconButton(
+      tooltip: 'Print invoice',
+      visualDensity: VisualDensity.compact,
+      icon: const AppIcon(AppIcons.print_outlined, size: 18),
+      onPressed: onPressed,
+    );
+
+/// Looks the sale invoice back up by id and sends it to the receipt printer —
+/// same PDF a fresh sale prints, reprinted on demand from the report.
+Future<void> _printSaleInvoiceRow(BuildContext context, int id) async {
+  final invoices = await SaleInvoiceRepository().getAll();
+  final matches = invoices.where((i) => i.id == id);
+  if (matches.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Invoice not found')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  await ReceiptPrinter.instance.printSaleInvoice(
+    context,
+    matches.first,
+    onError: (message) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    },
+  );
+}
+
 class _ReportBody extends StatelessWidget {
   const _ReportBody({required this.provider});
 
@@ -249,8 +284,14 @@ class _SaleReport extends StatelessWidget {
                             DataCell(Text(Fmt.money(inv.grandTotal),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700))),
-                            DataCell(_viewButton(
-                                () => provider.selectSale(inv))),
+                            DataCell(Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _printButton(
+                                    () => _printSaleInvoiceRow(context, inv.id)),
+                                _viewButton(() => provider.selectSale(inv)),
+                              ],
+                            )),
                           ],
                         ),
                     ],

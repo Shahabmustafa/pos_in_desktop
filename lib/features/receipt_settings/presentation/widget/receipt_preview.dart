@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../config/format.dart';
 import '../../data/model/receipt_settings_model.dart';
 
-/// An on-screen mock of the 80mm thermal receipt, drawn from sample data so the
+/// An on-screen mock of the A4 tabular invoice, drawn from sample data so the
 /// user sees the effect of every [ReceiptSettingsModel] change as they make it.
 ///
 /// It mirrors the layout of `buildReceiptPdf` in
@@ -24,13 +24,16 @@ class ReceiptPreview extends StatelessWidget {
   static const double _sampleGrand = _sampleSubtotal - _sampleDiscount + _sampleTax;
   static const double _samplePaid = 450;
 
+  static const _border = BorderSide(color: Color(0xFF9E9E9E), width: 0.6);
+
   @override
   Widget build(BuildContext context) {
     final s = settings;
+    final showDiscountCol = s.showItemDiscount;
 
     return Container(
-      width: 260,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      width: 340,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(6),
@@ -44,12 +47,7 @@ class ReceiptPreview extends StatelessWidget {
         ],
       ),
       child: DefaultTextStyle(
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 10.5,
-          height: 1.35,
-          color: Color(0xFF111111),
-        ),
+        style: const TextStyle(fontSize: 10.5, color: Color(0xFF111111)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -69,84 +67,60 @@ class ReceiptPreview extends StatelessWidget {
                 child: Text(
                   s.businessName,
                   style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111111),
-                  ),
+                      fontSize: 15, fontWeight: FontWeight.bold),
                 ),
               ),
             if (s.businessAddress.trim().isNotEmpty)
               Center(child: Text(s.businessAddress, textAlign: TextAlign.center)),
             if (s.businessPhone.trim().isNotEmpty)
               Center(child: Text(s.businessPhone)),
-            const SizedBox(height: 6),
-            const Center(
-              child: Text('SALE INVOICE',
-                  style: TextStyle(
-                      fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 6),
-            if (s.showInvoiceNo) _kv('Invoice', 'SI-000042'),
-            if (s.showDate) _kv('Date', '${Fmt.date(DateTime(2026, 9, 9))}  14:05'),
-            if (s.showParty) _kv('Customer', 'Ali Traders'),
-            if (s.showNotes) _kv('Notes', 'Deliver before 5pm'),
-            _dashes(),
-            Row(
-              children: const [
-                Expanded(flex: 5, child: _B('Item')),
-                Expanded(
-                    flex: 2,
-                    child: _B('Qty', align: TextAlign.right)),
-                Expanded(
-                    flex: 3,
-                    child: _B('Price', align: TextAlign.right)),
-                Expanded(
-                    flex: 3,
-                    child: _B('Total', align: TextAlign.right)),
-              ],
-            ),
-            const SizedBox(height: 2),
-            for (final line in _sampleLines) ...[
-              Text(line.$1),
-              Row(
-                children: [
-                  const Expanded(flex: 5, child: SizedBox()),
-                  Expanded(
-                      flex: 2,
-                      child: Text(_num(line.$2),
-                          textAlign: TextAlign.right)),
-                  Expanded(
-                      flex: 3,
-                      child: Text(Fmt.money(line.$3),
-                          textAlign: TextAlign.right)),
-                  Expanded(
-                      flex: 3,
-                      child: Text(
-                          Fmt.money(line.$2 * line.$3 - line.$4,
-                              decimals: true),
-                          textAlign: TextAlign.right)),
-                ],
-              ),
-              if (line.$4 > 0 && s.showItemDiscount)
-                Text('  discount -${Fmt.money(line.$4, decimals: true)}'),
-            ],
-            _dashes(),
-            _total('Subtotal', _sampleSubtotal),
-            if (s.showDiscountTotal) _total('Discount', -_sampleDiscount),
-            if (s.showTaxTotal) _total('Tax', _sampleTax),
-            const SizedBox(height: 2),
-            _total('GRAND TOTAL', _sampleGrand, bold: true),
-            if (s.showPaidBalance) ...[
-              _total('Paid', _samplePaid),
-              _total('Balance', _sampleGrand - _samplePaid, bold: true),
-            ],
             const SizedBox(height: 8),
-            if (s.showFooter && s.footerText.trim().isNotEmpty)
-              Center(child: Text(s.footerText, textAlign: TextAlign.center)),
-            if (s.showItemCount) ...[
+            Container(
+              width: double.infinity,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              decoration: const BoxDecoration(
+                border: Border(top: _border, bottom: _border),
+              ),
+              child: const Text('SALE INVOICE',
+                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+            ),
+            const SizedBox(height: 8),
+            _infoGrid(s),
+            if (s.showNotes) ...[
               const SizedBox(height: 4),
-              const Center(child: Text('2 item(s)  -  5 unit(s)')),
+              const Text('Notes: Deliver before 5pm'),
+            ],
+            const SizedBox(height: 10),
+            _itemsTable(showDiscountCol),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 220,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _total('Subtotal', _sampleSubtotal),
+                    if (s.showDiscountTotal) _total('Discount', -_sampleDiscount),
+                    if (s.showTaxTotal) _total('Tax', _sampleTax),
+                    const Divider(height: 10, thickness: 0.6),
+                    _total('GRAND TOTAL', _sampleGrand, bold: true),
+                    if (s.showPaidBalance) ...[
+                      _total('Paid', _samplePaid),
+                      _total('Balance', _sampleGrand - _samplePaid, bold: true),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            if (s.showFooter && s.footerText.trim().isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Center(child: Text(s.footerText, textAlign: TextAlign.center)),
+            ],
+            if (s.showItemCount) ...[
+              const SizedBox(height: 6),
+              const Text('2 item(s)  -  5 unit(s)', style: TextStyle(fontSize: 9)),
             ],
           ],
         ),
@@ -154,59 +128,107 @@ class ReceiptPreview extends StatelessWidget {
     );
   }
 
-  static Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.only(bottom: 1),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _infoGrid(ReceiptSettingsModel s) {
+    final headers = <String>[];
+    final values = <String>[];
+    if (s.showParty) {
+      headers.add('Customer');
+      values.add('Ali Traders');
+    }
+    if (s.showInvoiceNo) {
+      headers.add('Invoice No.');
+      values.add('SI-000042');
+    }
+    if (s.showDate) {
+      headers.add('Dated');
+      values.add(Fmt.date(DateTime(2026, 9, 9)));
+    }
+    if (headers.isEmpty) return const SizedBox();
+
+    return Table(
+      border: TableBorder.all(color: const Color(0xFF9E9E9E), width: 0.6),
+      children: [
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFFEEEEEE)),
           children: [
-            Text('$k: '),
-            Expanded(child: Text(v)),
+            for (final h in headers) _cell(h, bold: true),
           ],
         ),
-      );
-
-  static Widget _total(String label, double value, {bool bold = false}) {
-    final style = TextStyle(
-      fontFamily: 'monospace',
-      fontSize: bold ? 11.5 : 10.5,
-      fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-      color: const Color(0xFF111111),
-    );
-    return Row(
-      children: [
-        Expanded(
-          child: Text(label, style: style, overflow: TextOverflow.ellipsis),
-        ),
-        Text(Fmt.money(value, decimals: true), style: style),
+        TableRow(children: [for (final v in values) _cell(v)]),
       ],
     );
   }
 
-  static Widget _dashes() => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 3),
-        child: Text('--------------------------------',
-            maxLines: 1, overflow: TextOverflow.clip),
+  Widget _itemsTable(bool showDiscountCol) {
+    return Table(
+      border: TableBorder.all(color: const Color(0xFF9E9E9E), width: 0.6),
+      columnWidths: {
+        0: const FixedColumnWidth(20),
+        1: const FlexColumnWidth(5),
+        2: const FlexColumnWidth(1.4),
+        3: const FlexColumnWidth(1.6),
+        if (showDiscountCol) 4: const FlexColumnWidth(1.6),
+        (showDiscountCol ? 5 : 4): const FlexColumnWidth(1.8),
+      },
+      children: [
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFFEEEEEE)),
+          children: [
+            _cell('No.', bold: true, align: TextAlign.center),
+            _cell('Description', bold: true),
+            _cell('Qty', bold: true, align: TextAlign.right),
+            _cell('Rate', bold: true, align: TextAlign.right),
+            if (showDiscountCol) _cell('Disc', bold: true, align: TextAlign.right),
+            _cell('Amount', bold: true, align: TextAlign.right),
+          ],
+        ),
+        for (var i = 0; i < _sampleLines.length; i++)
+          TableRow(children: [
+            _cell('${i + 1}', align: TextAlign.center),
+            _cell(_sampleLines[i].$1),
+            _cell(_num(_sampleLines[i].$2), align: TextAlign.right),
+            _cell(Fmt.money(_sampleLines[i].$3), align: TextAlign.right),
+            if (showDiscountCol)
+              _cell(Fmt.money(_sampleLines[i].$4, decimals: true),
+                  align: TextAlign.right),
+            _cell(
+                Fmt.money(
+                    _sampleLines[i].$2 * _sampleLines[i].$3 - _sampleLines[i].$4,
+                    decimals: true),
+                align: TextAlign.right),
+          ]),
+      ],
+    );
+  }
+
+  static Widget _cell(String text, {bool bold = false, TextAlign? align}) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        child: Text(text,
+            textAlign: align,
+            style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
       );
+
+  static Widget _total(String label, double value, {bool bold = false}) {
+    final style = TextStyle(
+      fontSize: bold ? 11.5 : 10.5,
+      fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+      color: const Color(0xFF111111),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+              child: Text(label, style: style, overflow: TextOverflow.ellipsis)),
+          Text(Fmt.money(value, decimals: true), style: style),
+        ],
+      ),
+    );
+  }
 
   static String _num(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
-}
-
-class _B extends StatelessWidget {
-  const _B(this.text, {this.align});
-
-  final String text;
-  final TextAlign? align;
-
-  @override
-  Widget build(BuildContext context) => Text(
-        text,
-        textAlign: align,
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 10.5,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFF111111),
-        ),
-      );
 }

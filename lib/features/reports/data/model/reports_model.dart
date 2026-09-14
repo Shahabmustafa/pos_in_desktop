@@ -133,6 +133,7 @@ class LineReportRow {
 /// One invoice row in the Sale report; [items] fill the detail panel.
 class SaleReportInvoice {
   const SaleReportInvoice({
+    required this.id,
     required this.invoiceNo,
     required this.date,
     required this.customer,
@@ -143,6 +144,8 @@ class SaleReportInvoice {
     required this.items,
   });
 
+  /// Row id in `sale_invoice` — used to reprint the invoice from the report.
+  final int id;
   final String invoiceNo;
   final DateTime date;
   final String customer;
@@ -157,6 +160,7 @@ class SaleReportInvoice {
     List<LineReportRow> items = const [],
   }) {
     return SaleReportInvoice(
+      id: m['id'] as int,
       invoiceNo: _no(m['invoice_no'], m['id']),
       date: _date(m['invoice_date']),
       customer: (m['customer_name'] as String?)?.trim() ?? '',
