@@ -145,4 +145,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Discard changes'), findsOneWidget);
   });
+
+  testWidgets(
+      'form picks up settings that finish loading after the screen mounts',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // Unlike the test above, the provider here is *not* pre-loaded — the
+    // screen's own initState kicks off load(), matching how the real app
+    // opens this screen (fields start on the const defaults, then the saved
+    // row arrives from the database a moment later).
+    final provider = ReceiptSettingsProvider(
+      ReceiptSettingsRepository(
+        _FakeDataSource(const ReceiptSettingsModel(
+          businessName: 'Jan Ghani',
+          businessAddress: 'Peshawar RingRoad',
+        )),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: ReceiptSettingsScreen(provider: provider)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Jan Ghani'), findsWidgets);
+    expect(find.text('Peshawar RingRoad'), findsWidgets);
+    // A load that finished after mount is not a user edit.
+    expect(find.text('Discard changes'), findsNothing);
+  });
 }

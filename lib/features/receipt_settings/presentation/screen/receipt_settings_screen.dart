@@ -35,6 +35,13 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
   final _footer = TextEditingController();
 
   Uint8List? _logo;
+
+  /// True once the user has changed a field since the form last matched
+  /// [_provider.settings]. Distinct from [_dirty]: this only flips on an
+  /// actual edit, so a load that completes while the form still holds its
+  /// pristine initial defaults is always applied (see [_onProvider]).
+  bool _touched = false;
+
   late bool _showLogo;
   late bool _showInvoiceNo;
   late bool _showDate;
@@ -70,11 +77,12 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
   /// copy — but leave a form the user is mid-edit alone.
   void _onProvider() {
     if (_provider.loading || _provider.saving) return;
-    if (!_dirty) _apply(_provider.settings);
+    if (!_touched) _apply(_provider.settings);
   }
 
   void _apply(ReceiptSettingsModel s) {
     _readFrom(s);
+    _touched = false;
     if (mounted) setState(() {});
   }
 
@@ -136,12 +144,16 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
       );
       return;
     }
-    setState(() => _logo = bytes);
+    setState(() {
+      _logo = bytes;
+      _touched = true;
+    });
   }
 
   Future<void> _save() async {
     final ok = await _provider.save(_model);
     if (!mounted) return;
+    if (ok) _touched = false;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
@@ -187,10 +199,13 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
                 phoneController: _phone,
                 footerController: _footer,
                 enabled: canEdit,
-                onChanged: () => setState(() {}),
+                onChanged: () => setState(() => _touched = true),
                 logo: _logo,
                 onPickLogo: _pickLogo,
-                onRemoveLogo: () => setState(() => _logo = null),
+                onRemoveLogo: () => setState(() {
+                  _logo = null;
+                  _touched = true;
+                }),
                 showLogo: _showLogo,
                 showInvoiceNo: _showInvoiceNo,
                 showDate: _showDate,
@@ -203,6 +218,7 @@ class _ReceiptSettingsScreenState extends State<ReceiptSettingsScreen> {
                 showItemCount: _showItemCount,
                 showFooter: _showFooter,
                 onToggle: (field, value) => setState(() {
+                  _touched = true;
                   switch (field) {
                     case _Toggle.invoiceNo:
                       _showInvoiceNo = value;
