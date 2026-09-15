@@ -10,7 +10,8 @@ import '../model/sale_invoice_refs.dart';
 
 const _cols =
     'id, invoice_no, invoice_date, customer_id, customer_name, notes, '
-    'amount_received, bank_head_id, subtotal, discount_total, tax_total, grand_total';
+    'amount_received, bank_head_id, overall_discount, subtotal, discount_total, '
+    'tax_total, grand_total';
 
 const _itemCols =
     'id, sale_invoice_id, product_id, product_name, barcode, unit, quantity, '
@@ -56,6 +57,7 @@ class SaleInvoiceDataSource {
           notes                   TEXT          NOT NULL DEFAULT '',
           amount_received         NUMERIC(14,2) NOT NULL DEFAULT 0,
           bank_head_id            INTEGER,
+          overall_discount        NUMERIC(6,2)  NOT NULL DEFAULT 0,
           subtotal                NUMERIC(14,2) NOT NULL DEFAULT 0,
           discount_total          NUMERIC(14,2) NOT NULL DEFAULT 0,
           tax_total               NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -74,6 +76,7 @@ class SaleInvoiceDataSource {
           ADD COLUMN IF NOT EXISTS notes                   TEXT          NOT NULL DEFAULT '',
           ADD COLUMN IF NOT EXISTS amount_received         NUMERIC(14,2) NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS bank_head_id            INTEGER,
+          ADD COLUMN IF NOT EXISTS overall_discount        NUMERIC(6,2)  NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS subtotal                NUMERIC(14,2) NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS discount_total          NUMERIC(14,2) NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS tax_total               NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -187,10 +190,12 @@ class SaleInvoiceDataSource {
         Sql.named('''
           INSERT INTO sale_invoice
             (invoice_no, invoice_date, customer_id, customer_name, notes,
-             amount_received, bank_head_id, subtotal, discount_total, tax_total, grand_total)
+             amount_received, bank_head_id, overall_discount, subtotal,
+             discount_total, tax_total, grand_total)
           VALUES
             (@invoice_no, @invoice_date, @customer_id, @customer_name, @notes,
-             @amount_received, @bank_head_id, @subtotal, @discount_total, @tax_total, @grand_total)
+             @amount_received, @bank_head_id, @overall_discount, @subtotal,
+             @discount_total, @tax_total, @grand_total)
           RETURNING $_cols
         '''),
         parameters: p.toMap()..remove('id'),
@@ -268,7 +273,7 @@ class SaleInvoiceDataSource {
             invoice_no = @invoice_no, invoice_date = @invoice_date,
             customer_id = @customer_id, customer_name = @customer_name,
             notes = @notes, amount_received = @amount_received,
-            bank_head_id = @bank_head_id,
+            bank_head_id = @bank_head_id, overall_discount = @overall_discount,
             subtotal = @subtotal, discount_total = @discount_total,
             tax_total = @tax_total, grand_total = @grand_total
           WHERE id = @id

@@ -123,6 +123,38 @@ void main() {
     expect(inv.profit, 260); // 860 - 600
   });
 
+  test('overall discount applies after line discounts, before tax', () {
+    final inv = SaleInvoiceModel(
+      date: DateTime(2026, 9, 1),
+      overallDiscount: 10,
+      items: const [
+        // 10 x 100 = 1000, 10% line disc = 100 → net 900, 16% tax = 144
+        SaleInvoiceItemModel(
+            productId: 1, quantity: 10, salePrice: 100, discount: 10, tax: 16),
+      ],
+    );
+
+    // Overall 10% is taken off (subtotal - lineDiscount) = 900 → 90.
+    expect(inv.itemDiscountTotal, closeTo(100, 0.001));
+    expect(inv.overallDiscountAmount, closeTo(90, 0.001));
+    expect(inv.discountTotal, closeTo(190, 0.001));
+    // lineTotal = 900 - 144(tax) ... wait tax is on top: 900 + 144 = 1044,
+    // minus the 90 overall discount = 954.
+    expect(inv.grandTotal, closeTo(954, 0.001));
+  });
+
+  test('overall discount never pushes the total below zero', () {
+    final inv = SaleInvoiceModel(
+      date: DateTime(2026, 9, 1),
+      overallDiscount: 200,
+      items: const [
+        SaleInvoiceItemModel(productId: 1, quantity: 1, salePrice: 100),
+      ],
+    );
+    expect(inv.overallDiscountAmount, 100);
+    expect(inv.grandTotal, 0);
+  });
+
   test('line discount never exceeds the line gross', () {
     const line = SaleInvoiceItemModel(
         productId: 1, quantity: 1, salePrice: 100, discountFlat: 9999);
@@ -202,5 +234,31 @@ void main() {
     // The cart carries both a % and a flat (Rs) discount column per line.
     expect(find.text('Disc %'), findsOneWidget);
     expect(find.text('Disc Rs'), findsOneWidget);
+  });
+
+  testWidgets('overall discount % field reduces the Grand Total',
+      (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final p = makeProvider();
+    await tester.pumpWidget(MaterialApp(home: SaleInvoiceScreen(provider: p)));
+    await tester.pumpAndSettle();
+
+    // Coca-Cola 1.5L @ 120 x 1 → subtotal / grand total = 120.
+    final row = find.text('Coca-Cola 1.5L');
+    await tester.tap(row);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('Overall discount %'), findsOneWidget);
+    expect(find.text('Rs 120.00'), findsWidgets);
+
+    await tester.enterText(find.byKey(const Key('overallDiscountField')), '10');
+    await tester.pumpAndSettle();
+
+    // 10% of 120 = 12 off → grand total 108.
+    expect(find.text('Rs 108.00'), findsOneWidget);
   });
 }

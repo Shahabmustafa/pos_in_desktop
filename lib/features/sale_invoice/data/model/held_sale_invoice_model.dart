@@ -1,5 +1,10 @@
 import 'dart:convert';
 
+double _d(Object? v) {
+  if (v is num) return v.toDouble();
+  return double.tryParse('${v ?? ''}') ?? 0;
+}
+
 /// One parked cart line inside a [HeldSaleInvoiceModel].
 class HeldSaleLineModel {
   const HeldSaleLineModel({
@@ -49,11 +54,6 @@ class HeldSaleLineModel {
         'discount_flat': discountFlat,
         'tax': tax,
       };
-
-  static double _d(Object? v) {
-    if (v is num) return v.toDouble();
-    return double.tryParse('${v ?? ''}') ?? 0;
-  }
 }
 
 /// A held (parked) sale invoice: the whole cart saved so the till can serve the
@@ -69,6 +69,7 @@ class HeldSaleInvoiceModel {
     required this.date,
     this.heldBy = '',
     DateTime? heldAt,
+    this.overallDiscount = 0,
     this.lines = const [],
   }) : heldAt = heldAt ?? DateTime.now();
 
@@ -82,10 +83,32 @@ class HeldSaleInvoiceModel {
   /// Username of whoever held it (for the resume list). May be empty.
   final String heldBy;
   final DateTime heldAt;
+
+  /// Overall discount percentage on top of the lines' own discounts (see
+  /// `SaleInvoiceModel.overallDiscount`), carried through hold / resume.
+  final double overallDiscount;
+
   final List<HeldSaleLineModel> lines;
 
   int get itemCount => lines.length;
-  double get grandTotal => lines.fold(0, (a, l) => a + l.lineTotal);
+
+  double get subtotalAfterLineDiscounts => lines.fold(0, (a, l) {
+        final gross = l.quantity * l.price;
+        final disc = (gross * l.discount / 100 + l.discountFlat)
+            .clamp(0, gross)
+            .toDouble();
+        return a + gross - disc;
+      });
+
+  double get overallDiscountAmount {
+    final base = subtotalAfterLineDiscounts;
+    final amt = base * overallDiscount / 100;
+    if (amt < 0) return 0;
+    return amt > base ? base : amt;
+  }
+
+  double get grandTotal =>
+      lines.fold<double>(0, (a, l) => a + l.lineTotal) - overallDiscountAmount;
 
   String get title => customerName.trim().isEmpty ? 'Walk-in' : customerName;
 
@@ -105,6 +128,7 @@ class HeldSaleInvoiceModel {
       heldAt: map['created_at'] is DateTime
           ? map['created_at'] as DateTime
           : DateTime.tryParse('${map['created_at'] ?? ''}'),
+      overallDiscount: _d(map['overall_discount']),
       lines: [
         for (final e in decoded)
           HeldSaleLineModel.fromJson((e as Map).cast<String, dynamic>()),
@@ -122,6 +146,7 @@ class HeldSaleInvoiceModel {
         'item_count': itemCount,
         'grand_total': grandTotal,
         'held_by': heldBy,
+        'overall_discount': overallDiscount,
         'lines': jsonEncode([for (final l in lines) l.toJson()]),
       };
 

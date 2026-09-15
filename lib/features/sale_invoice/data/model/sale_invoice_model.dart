@@ -127,7 +127,8 @@ class SaleInvoiceItemModel {
 }
 
 /// A sale invoice: a header (customer, number, date) plus one or more [items].
-/// Discounts are per-line only (a percentage and a flat amount each).
+/// Discounts are per-line (a percentage and a flat amount each) plus one
+/// overall invoice-level percentage on top of those.
 class SaleInvoiceModel {
   const SaleInvoiceModel({
     this.id,
@@ -138,6 +139,7 @@ class SaleInvoiceModel {
     this.notes = '',
     this.amountReceived = 0,
     this.bankHeadId,
+    this.overallDiscount = 0,
     this.items = const [],
   });
 
@@ -158,12 +160,34 @@ class SaleInvoiceModel {
   /// added to the customer's `opening_balance`.
   final double amountReceived;
 
+  /// Overall discount percentage applied to the whole invoice, on top of any
+  /// per-line discounts — e.g. a 10% "loyalty" or negotiated discount off the
+  /// already-item-discounted subtotal.
+  final double overallDiscount;
+
   final List<SaleInvoiceItemModel> items;
 
   double get subtotal => items.fold(0, (a, i) => a + i.gross);
-  double get discountTotal => items.fold(0, (a, i) => a + i.discountAmount);
+  double get itemDiscountTotal =>
+      items.fold(0, (a, i) => a + i.discountAmount);
   double get taxTotal => items.fold(0, (a, i) => a + i.taxAmount);
-  double get grandTotal => items.fold(0, (a, i) => a + i.lineTotal);
+
+  /// The base [overallDiscount] percentage is taken off — the subtotal after
+  /// per-line discounts, before tax.
+  double get overallDiscountBase => subtotal - itemDiscountTotal;
+
+  double get overallDiscountAmount {
+    final base = overallDiscountBase;
+    final amt = base * overallDiscount / 100;
+    if (amt < 0) return 0;
+    return amt > base ? base : amt;
+  }
+
+  /// Total discount — per-line discounts plus the overall invoice discount.
+  double get discountTotal => itemDiscountTotal + overallDiscountAmount;
+
+  double get grandTotal =>
+      items.fold<double>(0, (a, i) => a + i.lineTotal) - overallDiscountAmount;
 
   /// Portion of this invoice left on the customer's account.
   double get balanceDue => grandTotal - amountReceived;
@@ -190,6 +214,7 @@ class SaleInvoiceModel {
       notes: (map['notes'] as String?) ?? '',
       amountReceived: _toDouble(map['amount_received']),
       bankHeadId: map['bank_head_id'] as int?,
+      overallDiscount: _toDouble(map['overall_discount']),
       items: items,
     );
   }
@@ -205,6 +230,7 @@ class SaleInvoiceModel {
         'notes': notes,
         'amount_received': amountReceived,
         'bank_head_id': bankHeadId,
+        'overall_discount': overallDiscount,
         'subtotal': subtotal,
         'discount_total': discountTotal,
         'tax_total': taxTotal,
@@ -220,6 +246,7 @@ class SaleInvoiceModel {
     String? notes,
     double? amountReceived,
     int? bankHeadId,
+    double? overallDiscount,
     List<SaleInvoiceItemModel>? items,
   }) {
     return SaleInvoiceModel(
@@ -231,6 +258,7 @@ class SaleInvoiceModel {
       notes: notes ?? this.notes,
       amountReceived: amountReceived ?? this.amountReceived,
       bankHeadId: bankHeadId ?? this.bankHeadId,
+      overallDiscount: overallDiscount ?? this.overallDiscount,
       items: items ?? this.items,
     );
   }

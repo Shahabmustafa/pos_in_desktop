@@ -194,6 +194,7 @@ class HeldOrder {
     required this.bankId,
     required this.lines,
     this.heldBy = '',
+    this.overallDiscount = 0,
   });
 
   final int id;
@@ -213,6 +214,9 @@ class HeldOrder {
   final String notes;
   final int? bankId;
   final List<HeldOrderLine> lines;
+
+  /// Overall invoice-level discount percentage, carried through hold / resume.
+  final double overallDiscount;
 }
 
 /// One cart line inside a [HeldOrder].
@@ -245,6 +249,7 @@ class PosInvoiceDraft {
     required this.lines,
     this.bankId,
     this.printReceipt = true,
+    this.overallDiscount = 0,
   });
 
   final PosParty? party;
@@ -258,6 +263,11 @@ class PosInvoiceDraft {
   /// Whether the caller should print a receipt after saving. Only meaningful
   /// when [PosInvoiceBuilder.showPrintReceiptToggle] is on; otherwise `true`.
   final bool printReceipt;
+
+  /// Overall invoice-level discount percentage, on top of each line's own
+  /// discount. Only meaningful when [PosInvoiceBuilder.showOverallDiscount]
+  /// is on; otherwise always `0`.
+  final double overallDiscount;
 }
 
 /// A two-pane POS builder: a searchable product list on the left, the running
@@ -284,6 +294,7 @@ class PosInvoiceBuilder extends StatefulWidget {
     this.priceLabel = 'Purch.',
     this.showSecondaryPrice = true,
     this.showLineDiscountAmount = false,
+    this.showOverallDiscount = false,
     this.banks = const [],
     this.bankHint = 'Bank (optional)',
     this.initialLines = const [],
@@ -324,6 +335,10 @@ class PosInvoiceBuilder extends StatefulWidget {
   /// When `true` each cart line gets a second discount field — a flat (rupee)
   /// amount alongside the discount percentage.
   final bool showLineDiscountAmount;
+
+  /// When `true` the cart summary shows an editable "Overall discount %"
+  /// field — one invoice-level percentage on top of each line's own discount.
+  final bool showOverallDiscount;
 
   /// Optional bank accounts. When non-empty the cart header shows a "Bank"
   /// picker; the chosen id rides back on [PosInvoiceDraft.bankId].
@@ -366,6 +381,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
   final _searchCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
   final _notesCtrl = TextEditingController();
+  final _overallDiscountCtrl = TextEditingController(text: '0');
   final _searchFocus = FocusNode();
   final _cartScrollCtrl = ScrollController();
 
@@ -381,6 +397,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
   void initState() {
     super.initState();
     _searchCtrl.addListener(() => setState(() => _highlightId = -1));
+    _overallDiscountCtrl.addListener(_recalc);
     for (final seed in widget.initialLines) {
       _lines.add(PosLine(
         product: seed.product,
@@ -400,6 +417,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
     _searchCtrl.dispose();
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
+    _overallDiscountCtrl.dispose();
     _searchFocus.dispose();
     _cartScrollCtrl.dispose();
     for (final l in _lines) {
@@ -422,7 +440,22 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
   double get _subtotal => _lines.fold(0, (a, l) => a + l.gross);
   double get _discountTotal => _lines.fold(0, (a, l) => a + l.discountAmount);
   double get _taxTotal => _lines.fold(0, (a, l) => a + l.taxAmount);
-  double get _grandTotal => _lines.fold(0, (a, l) => a + l.lineTotal);
+
+  double get _overallDiscountPercent =>
+      double.tryParse(_overallDiscountCtrl.text.trim()) ?? 0;
+
+  /// The overall discount percentage is taken off the subtotal after line
+  /// discounts, before tax.
+  double get _overallDiscountAmount {
+    if (!widget.showOverallDiscount) return 0;
+    final base = _subtotal - _discountTotal;
+    final amt = base * _overallDiscountPercent / 100;
+    if (amt < 0) return 0;
+    return amt > base ? base : amt;
+  }
+
+  double get _grandTotal =>
+      _lines.fold<double>(0, (a, l) => a + l.lineTotal) - _overallDiscountAmount;
   double get _totalUnits => _lines.fold(0, (a, l) => a + l.quantity);
 
   void _recalc() => setState(() {});
@@ -538,6 +571,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
       lines: List.of(_lines),
       bankId: _bankId,
       printReceipt: _printReceipt,
+      overallDiscount: _overallDiscountPercent,
     ));
     if (!mounted || !ok) return;
     setState(() {
@@ -546,6 +580,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
       }
       _lines.clear();
       _notesCtrl.clear();
+      _overallDiscountCtrl.text = '0';
       _date = DateTime.now();
       _bankId = null;
     });
@@ -588,6 +623,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
       lines: List.of(_lines),
       bankId: _bankId,
       printReceipt: _printReceipt,
+      overallDiscount: _overallDiscountPercent,
     ));
     if (!mounted || !ok) return;
     setState(() {
@@ -596,6 +632,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
       }
       _lines.clear();
       _notesCtrl.clear();
+      _overallDiscountCtrl.text = '0';
       _date = DateTime.now();
       _bankId = null;
       _party = widget.defaultParty;
@@ -665,6 +702,7 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
       _date = o.date;
       _notesCtrl.text = o.notes;
       _bankId = o.bankId;
+      _overallDiscountCtrl.text = PosLine._fmt(o.overallDiscount);
     });
     widget.onRemoveHeldOrder?.call(o.id);
     if (missing > 0) {
@@ -1077,6 +1115,43 @@ class _PosInvoiceBuilderState extends State<PosInvoiceBuilder> {
         ),
         row('Subtotal', _subtotal),
         row('Discount', -_discountTotal, color: const Color(0xFF2E7D32)),
+        if (widget.showOverallDiscount) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Overall discount %',
+                    style:
+                        TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+                SizedBox(
+                  width: 64,
+                  height: 30,
+                  child: TextField(
+                    key: const Key('overallDiscountField'),
+                    controller: _overallDiscountCtrl,
+                    textAlign: TextAlign.center,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                    ],
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_overallDiscountAmount > 0)
+            row('Overall discount', -_overallDiscountAmount,
+                color: const Color(0xFF2E7D32)),
+        ],
         row('Tax', _taxTotal, color: const Color(0xFFC77700)),
         const Divider(height: 16),
         Row(

@@ -58,13 +58,17 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           tax: l.tax,
         ),
     ];
-    final grandTotal = items.fold<double>(0, (a, i) => a + i.lineTotal);
 
     // Walk-in (or no customer) sales are paid in full at the counter; a real
     // customer's sale goes straight to their credit — collect it later from
     // Receive Payment.
     final customerId = draft.party?.id;
     final walkInId = _provider.walkInCustomer?.id;
+    final grandTotal = SaleInvoiceModel(
+      date: draft.date,
+      overallDiscount: draft.overallDiscount,
+      items: items,
+    ).grandTotal;
     final amountReceived =
         (customerId != null && customerId != walkInId) ? 0.0 : grandTotal;
 
@@ -75,6 +79,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       notes: draft.notes,
       amountReceived: amountReceived,
       bankHeadId: draft.bankId,
+      overallDiscount: draft.overallDiscount,
       items: items,
     );
     final ok = await _provider.save(model);
@@ -119,6 +124,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       bankHeadId: draft.bankId,
       date: draft.date,
       heldBy: AccessScope.of(context).user?.username ?? '',
+      overallDiscount: draft.overallDiscount,
       lines: [
         for (final l in draft.lines)
           HeldSaleLineModel(
@@ -156,6 +162,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               date: h.date,
               notes: h.notes,
               bankId: h.bankHeadId,
+              overallDiscount: h.overallDiscount,
               lines: [
                 for (final l in h.lines)
                   HeldOrderLine(
@@ -198,6 +205,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           saving: _provider.saving,
           showSecondaryPrice: false,
           showLineDiscountAmount: true,
+          showOverallDiscount: true,
           showPrintReceiptToggle: true,
           priceLabel: 'Sale',
           defaultParty: _provider.walkInCustomer == null

@@ -4,7 +4,8 @@ import '../../../../config/database/database_connection.dart';
 import '../model/held_sale_invoice_model.dart';
 
 const _cols = 'id, customer_id, customer_name, notes, bank_head_id, '
-    'invoice_date, item_count, grand_total, held_by, lines, created_at';
+    'invoice_date, item_count, grand_total, held_by, overall_discount, lines, '
+    'created_at';
 
 /// Talks to PostgreSQL for held (parked) sale invoices.
 ///
@@ -29,10 +30,16 @@ class HeldSaleInvoiceDataSource {
           item_count    INTEGER       NOT NULL DEFAULT 0,
           grand_total   NUMERIC(14,2) NOT NULL DEFAULT 0,
           held_by       TEXT          NOT NULL DEFAULT '',
+          overall_discount NUMERIC(6,2) NOT NULL DEFAULT 0,
           lines         TEXT          NOT NULL DEFAULT '[]',
           created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
         )
       ''');
+      // Bring an older `held_sale_invoice` up to date.
+      await _conn.execute(
+        'ALTER TABLE held_sale_invoice '
+        "ADD COLUMN IF NOT EXISTS overall_discount NUMERIC(6,2) NOT NULL DEFAULT 0",
+      );
     } on ServerException catch (e) {
       if (e.code != '42501') rethrow;
     }
@@ -54,10 +61,10 @@ class HeldSaleInvoiceDataSource {
       Sql.named('''
         INSERT INTO held_sale_invoice
           (customer_id, customer_name, notes, bank_head_id, invoice_date,
-           item_count, grand_total, held_by, lines)
+           item_count, grand_total, held_by, overall_discount, lines)
         VALUES
           (@customer_id, @customer_name, @notes, @bank_head_id, @invoice_date,
-           @item_count, @grand_total, @held_by, @lines)
+           @item_count, @grand_total, @held_by, @overall_discount, @lines)
         RETURNING $_cols
       '''),
       parameters: held.toInsertParams(),
