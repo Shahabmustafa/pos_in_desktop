@@ -6,8 +6,10 @@ import '../../../../config/format.dart';
 import '../../../../shared/feature_ui.dart';
 import '../../../../shared/receipt/barcode_label.dart';
 import '../../../../shared/receipt/receipt_printer.dart';
+import '../../../../shared/searchable_dropdown.dart';
 import '../../../login/data/permissions.dart';
 import '../../../login/presentation/access_scope.dart';
+import '../../data/model/named_ref.dart';
 import '../../data/model/stock_item_model.dart';
 import '../provider/stock_inventory_provider.dart';
 import '../widget/stock_item_form_dialog.dart';
@@ -30,6 +32,7 @@ class StockInventoryScreen extends StatefulWidget {
 class _StockInventoryScreenState extends State<StockInventoryScreen> {
   late final StockInventoryProvider _provider =
       widget.provider ?? StockInventoryProvider();
+  final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -39,6 +42,7 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     if (widget.provider == null) _provider.dispose();
     super.dispose();
   }
@@ -140,11 +144,53 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 260,
+                      child: SearchableDropdown<int>(
+                        items: [
+                          for (final c in _provider.companies) c.id,
+                        ],
+                        value: _provider.selectedCompanyId,
+                        includeNull: true,
+                        nullLabel: 'All Companies',
+                        hintText: 'Company',
+                        itemLabel: (id) => _provider.companies
+                            .firstWhere((c) => c.id == id,
+                                orElse: () => const NamedRef(id: -1, name: ''))
+                            .name,
+                        onChanged: _provider.selectCompany,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: 'Search by name, SKU or barcode',
+                          prefixIcon: const Padding(
+                            padding: EdgeInsets.only(left: 10, right: 8),
+                            child: AppIcon(AppIcons.search, size: 16),
+                          ),
+                          prefixIconConstraints:
+                              const BoxConstraints(minWidth: 0, minHeight: 0),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: _provider.setSearch,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
                 child: StatCardRow(
                   cards: [
                     StatCard(
                       title: 'Products',
-                      subtitle: '${_provider.items.length}',
+                      subtitle: '${_provider.filteredItems.length}',
                     ),
                     StatCard(
                       title: 'Active',
@@ -183,12 +229,18 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
                             label: const Text('Add Product'),
                           )
                         : null,
-                    child: _provider.items.isEmpty
+                    child: _provider.filteredItems.isEmpty
                         ? EmptyState(
                             icon: AppIcons.inventory_2_outlined,
-                            title: 'No products yet',
-                            actionLabel: canAdd ? 'Add Product' : null,
-                            onAction: canAdd ? () => _openForm() : null,
+                            title: _provider.items.isEmpty
+                                ? 'No products yet'
+                                : 'No products match your filter',
+                            actionLabel: _provider.items.isEmpty && canAdd
+                                ? 'Add Product'
+                                : null,
+                            onAction: _provider.items.isEmpty && canAdd
+                                ? () => _openForm()
+                                : null,
                           )
                         : ScrollableTable(
                             flexColumn: 1, // Product
@@ -211,7 +263,7 @@ class _StockInventoryScreenState extends State<StockInventoryScreen> {
                               DataColumn(label: Text('')),
                             ],
                             rows: [
-                              for (final i in _provider.items)
+                              for (final i in _provider.filteredItems)
                                 DataRow(
                                   onSelectChanged:
                                       canEdit ? (_) => _openForm(i) : null,

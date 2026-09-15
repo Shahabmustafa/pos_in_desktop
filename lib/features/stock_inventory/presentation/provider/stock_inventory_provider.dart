@@ -33,21 +33,57 @@ class StockInventoryProvider extends ChangeNotifier {
   /// Inventory types for the form's type picker (from the Product Catalog feature).
   List<NamedRef> get inventoryTypes => _inventoryTypes;
 
-  int get activeCount => _items.where((i) => i.isActive).length;
+  int? _selectedCompanyId;
+
+  /// The company currently filtering the table, or null for "All Companies".
+  int? get selectedCompanyId => _selectedCompanyId;
+
+  String _search = '';
+  String get search => _search;
+
+  /// Restrict the table to one company's stock.
+  void selectCompany(int? companyId) {
+    _selectedCompanyId = companyId;
+    notifyListeners();
+  }
+
+  /// Filter the table by product name / SKU / barcode.
+  void setSearch(String query) {
+    _search = query;
+    notifyListeners();
+  }
+
+  /// Items after the company filter and the search box are applied. Every
+  /// stat card below is derived from this list, so selecting a company also
+  /// narrows "Stock Value" etc. to that company.
+  List<StockItemModel> get filteredItems {
+    final q = _search.trim().toLowerCase();
+    return _items.where((i) {
+      if (_selectedCompanyId != null && i.companyId != _selectedCompanyId) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      return i.name.toLowerCase().contains(q) ||
+          i.sku.toLowerCase().contains(q) ||
+          i.barcode.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  int get activeCount => filteredItems.where((i) => i.isActive).length;
 
   /// Distinct categories currently used by at least one product.
-  int get categoryCount => _items
+  int get categoryCount => filteredItems
       .map((i) => i.category.trim())
       .where((c) => c.isNotEmpty)
       .toSet()
       .length;
 
-  double get stockValue =>
-      _items.fold<double>(0, (a, i) => a + i.purchasePrice * i.quantity);
+  double get stockValue => filteredItems.fold<double>(
+      0, (a, i) => a + i.purchasePrice * i.quantity);
 
-  /// Total units on hand across every product.
+  /// Total units on hand across the filtered products.
   double get unitsOnHand =>
-      _items.fold<double>(0, (a, i) => a + i.quantity);
+      filteredItems.fold<double>(0, (a, i) => a + i.quantity);
 
   Future<void> load() async {
     _loading = true;
