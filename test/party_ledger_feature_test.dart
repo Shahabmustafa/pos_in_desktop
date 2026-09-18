@@ -22,6 +22,8 @@ LedgerEntry _e(
       debit: debit,
       credit: credit,
       sortKey: sortKey,
+      sourceType: LedgerSourceType.saleInvoice,
+      sourceId: sortKey,
     );
 
 /// Repository that serves fixed data without a database.
@@ -53,6 +55,8 @@ class _FakeRepo implements PartyLedgerRepository {
               debit: m.debit,
               credit: m.credit,
               sortKey: m.sortKey,
+              sourceType: m.sourceType,
+              sourceId: m.sourceId,
             ),
         ],
         anchor: _anchor,

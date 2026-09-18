@@ -6,8 +6,8 @@ import 'package:pos/shared/app_icon.dart';
 import '../../../../shared/customer_payment_dialog.dart';
 import '../../../../shared/feature_ui.dart';
 import '../../../../shared/pos_invoice_builder.dart';
+import '../../../../shared/receipt/purchase_receipt.dart';
 import '../../../../shared/receipt/receipt_printer.dart';
-import '../../../../shared/receipt/sale_receipt.dart';
 import '../../data/model/purchase_model.dart';
 import '../provider/purchase_provider.dart';
 
@@ -104,7 +104,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       if (saved != null && draft.printReceipt) {
         unawaited(ReceiptPrinter.instance.printReceipt(
           context,
-          buildReceiptPdf(_purchaseReceipt(saved)),
+          buildPurchaseReceiptPdf(saved),
           onError: (msg) {
             if (mounted) {
               ScaffoldMessenger.of(context)
@@ -120,33 +120,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     }
     return ok;
   }
-
-  ReceiptData _purchaseReceipt(PurchaseModel p) => ReceiptData(
-        docType: 'PURCHASE INVOICE',
-        invoiceNo: p.invoiceNo.isNotEmpty ? p.invoiceNo : '#${p.id ?? ''}',
-        date: p.date,
-        partyLabel: 'Supplier',
-        partyName: p.companyName,
-        lines: [
-          for (final it in p.items)
-            ReceiptLine(
-              name: it.productName,
-              quantity: it.quantity,
-              unitPrice: it.purchasePrice,
-              lineTotal: it.lineTotal,
-              discountAmount: it.discountAmount,
-            ),
-        ],
-        subtotal: p.subtotal,
-        discountTotal: p.discountTotal,
-        taxTotal: p.taxTotal,
-        grandTotal: p.grandTotal,
-        extraTotals: [
-          ReceiptTotal('Paid', p.amountPaid),
-          if (p.balanceDue.abs() > 0.009)
-            ReceiptTotal('Balance', p.balanceDue, bold: true),
-        ],
-      );
 
   @override
   Widget build(BuildContext context) {

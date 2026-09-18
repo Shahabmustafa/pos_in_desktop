@@ -5,9 +5,82 @@ import '../../../../config/format.dart';
 import '../../../../shared/export/export_button.dart';
 import '../../../../shared/export/export_doc.dart';
 import '../../../../shared/feature_ui.dart';
+import '../../../../shared/receipt/purchase_receipt.dart';
+import '../../../../shared/receipt/purchase_return_receipt.dart';
+import '../../../../shared/receipt/receipt_printer.dart';
+import '../../../../shared/receipt/sale_return_receipt.dart';
 import '../../../../shared/searchable_dropdown.dart';
+import '../../../purchase/data/repository/purchase_repository.dart';
+import '../../../purchase_return/data/repository/purchase_return_repository.dart';
+import '../../../reports/data/model/reports_model.dart' show LineReportRow;
+import '../../../sale_invoice/data/repository/sale_invoice_repository.dart';
+import '../../../sale_return/data/repository/sale_return_repository.dart';
 import '../../data/model/party_ledger_model.dart';
 import '../provider/party_ledger_provider.dart';
+
+/// Compact "open the detail panel" action for a table row.
+Widget _viewButton(VoidCallback onPressed) => IconButton(
+      tooltip: 'View details',
+      visualDensity: VisualDensity.compact,
+      icon: const AppIcon(AppIcons.visibility_outlined, size: 18),
+      onPressed: onPressed,
+    );
+
+/// Compact "print this document" action for a table row.
+Widget _printButton(VoidCallback onPressed) => IconButton(
+      tooltip: 'Print',
+      visualDensity: VisualDensity.compact,
+      icon: const AppIcon(AppIcons.print_outlined, size: 18),
+      onPressed: onPressed,
+    );
+
+/// Looks the entry's source document back up by id and reprints its A4 PDF —
+/// same builders the Reports screen uses to reprint a row.
+Future<void> _printLedgerEntry(BuildContext context, LedgerEntry e) async {
+  void fail(String message) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  switch (e.sourceType) {
+    case LedgerSourceType.saleInvoice:
+      final all = await SaleInvoiceRepository().getAll();
+      final m = all.where((i) => i.id == e.sourceId);
+      if (m.isEmpty) return fail('Invoice not found');
+      if (!context.mounted) return;
+      await ReceiptPrinter.instance
+          .printSaleInvoice(context, m.first, onError: fail);
+    case LedgerSourceType.purchaseInvoice:
+      final all = await PurchaseRepository().getAll();
+      final m = all.where((i) => i.id == e.sourceId);
+      if (m.isEmpty) return fail('Invoice not found');
+      if (!context.mounted) return;
+      await ReceiptPrinter.instance.printReceipt(
+          context, buildPurchaseReceiptPdf(m.first),
+          onError: fail);
+    case LedgerSourceType.saleReturn:
+      final all = await SaleReturnRepository().getAll();
+      final m = all.where((r) => r.id == e.sourceId);
+      if (m.isEmpty) return fail('Return not found');
+      if (!context.mounted) return;
+      await ReceiptPrinter.instance.printReceipt(
+          context, buildSaleReturnReceiptPdf(m.first),
+          onError: fail);
+    case LedgerSourceType.purchaseReturn:
+      final all = await PurchaseReturnRepository().getAll();
+      final m = all.where((r) => r.id == e.sourceId);
+      if (m.isEmpty) return fail('Return not found');
+      if (!context.mounted) return;
+      await ReceiptPrinter.instance.printReceipt(
+          context, buildPurchaseReturnReceiptPdf(m.first),
+          onError: fail);
+    case LedgerSourceType.customerPayment:
+    case LedgerSourceType.companyPayment:
+      fail('Nothing to print for this entry');
+  }
+}
 
 /// Party Ledger — an account statement for one customer or one company:
 /// opening balance, every document that moved it in the date range, a running
@@ -237,8 +310,9 @@ class _Body extends StatelessWidget {
     final closeTint = owed > 0
         ? const Color(0xFFC62828)
         : const Color(0xFF2E7D32);
+    final selected = provider.selected;
 
-    return Column(
+    final table = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         StatCardRow(cards: [
@@ -264,7 +338,7 @@ class _Body extends StatelessWidget {
                 '${ledger.entries.length} movement(s)  ·  ${Fmt.date(provider.range.start)} → ${Fmt.date(provider.range.end)}',
             fillHeight: true,
             child: ScrollableTable(
-              flexColumn: 3, // Detail
+              flexColumn: selected == null ? 3 : -1, // Detail
               columns: const [
                 DataColumn(label: Text('Date')),
                 DataColumn(label: Text('Type')),
@@ -273,6 +347,7 @@ class _Body extends StatelessWidget {
                 DataColumn(label: Text('Debit'), numeric: true),
                 DataColumn(label: Text('Credit'), numeric: true),
                 DataColumn(label: Text('Balance'), numeric: true),
+                DataColumn(label: Text('')),
               ],
               rows: [
                 _plainRow(
@@ -282,25 +357,37 @@ class _Body extends StatelessWidget {
                   bg: scheme.surfaceContainerHighest,
                 ),
                 for (final e in ledger.entries)
-                  DataRow(cells: [
-                    DataCell(Text(Fmt.date(e.date))),
-                    DataCell(Text(e.type)),
-                    DataCell(Text(e.docNo)),
-                    DataCell(Text(e.detail)),
-                    DataCell(Text(e.debit == 0 ? '—' : Fmt.money(e.debit),
-                        style: TextStyle(
-                            color: e.debit == 0
-                                ? null
-                                : const Color(0xFFC62828)))),
-                    DataCell(Text(e.credit == 0 ? '—' : Fmt.money(e.credit),
-                        style: TextStyle(
-                            color: e.credit == 0
-                                ? null
-                                : const Color(0xFF2E7D32)))),
-                    DataCell(Text(Fmt.money(e.runningBalance),
-                        style:
-                            const TextStyle(fontWeight: FontWeight.w600))),
-                  ]),
+                  DataRow(
+                    selected: identical(selected, e),
+                    cells: [
+                      DataCell(Text(Fmt.date(e.date))),
+                      DataCell(Text(e.type)),
+                      DataCell(Text(e.docNo)),
+                      DataCell(Text(e.detail)),
+                      DataCell(Text(e.debit == 0 ? '—' : Fmt.money(e.debit),
+                          style: TextStyle(
+                              color: e.debit == 0
+                                  ? null
+                                  : const Color(0xFFC62828)))),
+                      DataCell(Text(e.credit == 0 ? '—' : Fmt.money(e.credit),
+                          style: TextStyle(
+                              color: e.credit == 0
+                                  ? null
+                                  : const Color(0xFF2E7D32)))),
+                      DataCell(Text(Fmt.money(e.runningBalance),
+                          style:
+                              const TextStyle(fontWeight: FontWeight.w600))),
+                      DataCell(e.isPrimaryDocument
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _printButton(() => _printLedgerEntry(context, e)),
+                                _viewButton(() => provider.selectEntry(e)),
+                              ],
+                            )
+                          : const SizedBox.shrink()),
+                    ],
+                  ),
                 _plainRow(
                   cells: [
                     '',
@@ -320,9 +407,29 @@ class _Body extends StatelessWidget {
         ),
       ],
     );
+
+    if (selected == null) return table;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: table),
+        const VerticalDivider(width: 25),
+        SizedBox(
+          width: 400,
+          child: _EntryDetailPanel(
+            entry: selected,
+            detail: provider.detail,
+            loading: provider.detailLoading,
+            onClose: () => provider.selectEntry(null),
+            onPrint: () => _printLedgerEntry(context, selected),
+          ),
+        ),
+      ],
+    );
   }
 
-  /// A summary row: 6 string cells + a formatted balance cell.
+  /// A summary row: 6 string cells + a formatted balance cell + a blank
+  /// action cell (kept in step with the 8-column table).
   DataRow _plainRow({
     required List<String> cells,
     required double balance,
@@ -335,10 +442,156 @@ class _Body extends StatelessWidget {
       cells: [
         for (final c in cells) DataCell(Text(c, style: style)),
         DataCell(Text(Fmt.money(balance), style: style)),
+        const DataCell(SizedBox.shrink()),
       ],
     );
   }
 }
+
+/// Right-hand detail panel for one ledger row: header, an items table once
+/// its source document has loaded, and a totals footer.
+class _EntryDetailPanel extends StatelessWidget {
+  const _EntryDetailPanel({
+    required this.entry,
+    required this.detail,
+    required this.loading,
+    required this.onClose,
+    required this.onPrint,
+  });
+
+  final LedgerEntry entry;
+  final LedgerEntryDetail? detail;
+  final bool loading;
+  final VoidCallback onClose;
+  final VoidCallback onPrint;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 4, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(entry.docNo,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text('${Fmt.date(entry.date)}  ·  ${entry.type}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.outline)),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Print',
+                icon: const AppIcon(AppIcons.print_outlined),
+                onPressed: loading || detail == null ? null : onPrint,
+              ),
+              IconButton(
+                tooltip: 'Close',
+                icon: const AppIcon(AppIcons.close),
+                onPressed: onClose,
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : detail == null
+                  ? const EmptyState(
+                      icon: AppIcons.bar_chart_outlined,
+                      title: 'Could not load this document')
+                  : _ItemsTable(items: detail!.items, rateHead: detail!.rateHead),
+        ),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+          child: Column(
+            children: [
+              for (var i = 0; i < (detail?.totals.length ?? 0); i++) ...[
+                if (i == detail!.totals.length - 1) const Divider(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(detail!.totals[i].$1,
+                          style: TextStyle(
+                              fontWeight: i == detail!.totals.length - 1
+                                  ? FontWeight.w700
+                                  : FontWeight.w500)),
+                      Text(Fmt.money(detail!.totals[i].$2),
+                          style: TextStyle(
+                              fontWeight: i == detail!.totals.length - 1
+                                  ? FontWeight.w800
+                                  : FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Product line table inside a ledger entry's detail panel.
+class _ItemsTable extends StatelessWidget {
+  const _ItemsTable({required this.items, this.rateHead = 'Rate'});
+
+  final List<LineReportRow> items;
+  final String rateHead;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const EmptyState(
+          icon: AppIcons.bar_chart_outlined, title: 'No items');
+    }
+    return ScrollableTable(
+      flexColumn: -1, // narrow panel — let the table scroll, don't squeeze
+      columnSpacing: 14,
+      columns: [
+        const DataColumn(label: Text('Product')),
+        const DataColumn(label: Text('Qty'), numeric: true),
+        DataColumn(label: Text(rateHead), numeric: true),
+        const DataColumn(label: Text('Disc'), numeric: true),
+        const DataColumn(label: Text('Amount'), numeric: true),
+      ],
+      rows: [
+        for (final it in items)
+          DataRow(cells: [
+            DataCell(Text(it.product)),
+            DataCell(Text(it.unit.isEmpty
+                ? _qty(it.quantity)
+                : '${_qty(it.quantity)} ${it.unit}')),
+            DataCell(Text(Fmt.money(it.price))),
+            DataCell(Text(it.discount == 0 ? '—' : Fmt.money(it.discount))),
+            DataCell(Text(Fmt.money(it.lineTotal),
+                style: const TextStyle(fontWeight: FontWeight.w700))),
+          ]),
+      ],
+    );
+  }
+}
+
+String _qty(double v) =>
+    v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
 /// Compact From / To date picker, mirrors the Reports screen dialog.
 class _DateRangeDialog extends StatefulWidget {

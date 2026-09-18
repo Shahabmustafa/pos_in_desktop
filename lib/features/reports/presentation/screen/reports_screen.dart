@@ -4,8 +4,14 @@ import 'package:pos/shared/app_icon.dart';
 import '../../../../config/format.dart';
 import '../../../../shared/export/export_button.dart';
 import '../../../../shared/feature_ui.dart';
+import '../../../../shared/receipt/purchase_receipt.dart';
+import '../../../../shared/receipt/purchase_return_receipt.dart';
 import '../../../../shared/receipt/receipt_printer.dart';
+import '../../../../shared/receipt/sale_return_receipt.dart';
+import '../../../purchase/data/repository/purchase_repository.dart';
+import '../../../purchase_return/data/repository/purchase_return_repository.dart';
 import '../../../sale_invoice/data/repository/sale_invoice_repository.dart';
+import '../../../sale_return/data/repository/sale_return_repository.dart';
 import '../../data/model/reports_model.dart';
 import '../provider/reports_provider.dart';
 import 'reports_export.dart';
@@ -185,6 +191,78 @@ Future<void> _printSaleInvoiceRow(BuildContext context, int id) async {
   await ReceiptPrinter.instance.printSaleInvoice(
     context,
     matches.first,
+    onError: (message) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    },
+  );
+}
+
+/// Looks the purchase invoice back up by id and reprints its A4 PDF.
+Future<void> _printPurchaseInvoiceRow(BuildContext context, int id) async {
+  final invoices = await PurchaseRepository().getAll();
+  final matches = invoices.where((i) => i.id == id);
+  if (matches.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Invoice not found')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  await ReceiptPrinter.instance.printReceipt(
+    context,
+    buildPurchaseReceiptPdf(matches.first),
+    onError: (message) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    },
+  );
+}
+
+/// Looks the sale return back up by id and reprints its A4 PDF.
+Future<void> _printSaleReturnRow(BuildContext context, int id) async {
+  final returns = await SaleReturnRepository().getAll();
+  final matches = returns.where((r) => r.id == id);
+  if (matches.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Return not found')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  await ReceiptPrinter.instance.printReceipt(
+    context,
+    buildSaleReturnReceiptPdf(matches.first),
+    onError: (message) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    },
+  );
+}
+
+/// Looks the purchase return back up by id and reprints its A4 PDF.
+Future<void> _printPurchaseReturnRow(BuildContext context, int id) async {
+  final returns = await PurchaseReturnRepository().getAll();
+  final matches = returns.where((r) => r.id == id);
+  if (matches.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Return not found')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  await ReceiptPrinter.instance.printReceipt(
+    context,
+    buildPurchaseReturnReceiptPdf(matches.first),
     onError: (message) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -379,8 +457,15 @@ class _SaleReturnReport extends StatelessWidget {
                             DataCell(Text(Fmt.money(inv.grandTotal),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700))),
-                            DataCell(_viewButton(
-                                () => provider.selectSaleReturn(inv))),
+                            DataCell(Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _printButton(
+                                    () => _printSaleReturnRow(context, inv.id)),
+                                _viewButton(
+                                    () => provider.selectSaleReturn(inv)),
+                              ],
+                            )),
                           ],
                         ),
                     ],
@@ -1045,8 +1130,15 @@ class _PurchaseReport extends StatelessWidget {
                             DataCell(Text(Fmt.money(inv.grandTotal),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700))),
-                            DataCell(_viewButton(
-                                () => provider.selectPurchase(inv))),
+                            DataCell(Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _printButton(() =>
+                                    _printPurchaseInvoiceRow(context, inv.id)),
+                                _viewButton(
+                                    () => provider.selectPurchase(inv)),
+                              ],
+                            )),
                           ],
                         ),
                     ],
@@ -1068,6 +1160,7 @@ class _PurchaseReport extends StatelessWidget {
                   DataColumn(label: Text('Supplier')),
                   DataColumn(label: Text('Qty'), numeric: true),
                   DataColumn(label: Text('Value'), numeric: true),
+                  DataColumn(label: Text('')),
                 ],
                 rows: [
                   for (final row in data.returns)
@@ -1079,6 +1172,8 @@ class _PurchaseReport extends StatelessWidget {
                       DataCell(Text(Fmt.money(row.grandTotal),
                           style:
                               const TextStyle(fontWeight: FontWeight.w700))),
+                      DataCell(_printButton(
+                          () => _printPurchaseReturnRow(context, row.id))),
                     ]),
                 ],
               ),

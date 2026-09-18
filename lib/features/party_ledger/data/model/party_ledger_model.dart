@@ -55,6 +55,16 @@ class PartyRef {
   String toString() => name;
 }
 
+/// Which table [LedgerEntry.sourceId] points into.
+enum LedgerSourceType {
+  saleInvoice,
+  saleReturn,
+  purchaseInvoice,
+  purchaseReturn,
+  customerPayment,
+  companyPayment,
+}
+
 /// One line in the statement.
 class LedgerEntry {
   LedgerEntry({
@@ -65,6 +75,8 @@ class LedgerEntry {
     required this.debit,
     required this.credit,
     required this.sortKey,
+    required this.sourceType,
+    required this.sourceId,
   });
 
   final DateTime date;
@@ -82,6 +94,23 @@ class LedgerEntry {
 
   /// Source row id — a stable tie-break for rows that share a date.
   final int sortKey;
+
+  /// Which table [sourceId] is a row id in — e.g. a same-day "cash at
+  /// billing" sub-row still points at the `sale_invoice` it came from.
+  final LedgerSourceType sourceType;
+
+  /// Row id in the table named by [sourceType].
+  final int sourceId;
+
+  /// True for the four document rows that carry line items and can be
+  /// viewed / reprinted (Sale, Sale Return, Purchase, Purchase Return) — as
+  /// opposed to a cash sub-row or a standalone payment/receipt, which has no
+  /// items of its own.
+  bool get isPrimaryDocument =>
+      type == 'Sale' ||
+      type == 'Sale Return' ||
+      type == 'Purchase' ||
+      type == 'Purchase Return';
 
   /// Filled once the entries are ordered.
   double runningBalance = 0;

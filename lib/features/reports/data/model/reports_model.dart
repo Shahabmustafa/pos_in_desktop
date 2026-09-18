@@ -176,6 +176,7 @@ class SaleReportInvoice {
 /// One invoice row in the Sale Return report; [items] fill the detail panel.
 class SaleReturnReportInvoice {
   const SaleReturnReportInvoice({
+    required this.id,
     required this.invoiceNo,
     required this.date,
     required this.customer,
@@ -184,6 +185,8 @@ class SaleReturnReportInvoice {
     required this.items,
   });
 
+  /// Row id in `sale_return` — used to reprint the return from the report.
+  final int id;
   final String invoiceNo;
   final DateTime date;
   final String customer;
@@ -196,6 +199,7 @@ class SaleReturnReportInvoice {
     List<LineReportRow> items = const [],
   }) {
     return SaleReturnReportInvoice(
+      id: m['id'] as int,
       invoiceNo: _no(m['invoice_no'], m['id']),
       date: _date(m['return_date']),
       customer: (m['customer_name'] as String?)?.trim() ?? '',
@@ -209,6 +213,7 @@ class SaleReturnReportInvoice {
 /// One invoice row in the Purchase report; [items] fill the detail panel.
 class PurchaseReportInvoice {
   const PurchaseReportInvoice({
+    required this.id,
     required this.invoiceNo,
     required this.date,
     required this.supplier,
@@ -219,6 +224,8 @@ class PurchaseReportInvoice {
     required this.items,
   });
 
+  /// Row id in `purchase_invoice` — used to reprint the invoice from the report.
+  final int id;
   final String invoiceNo;
   final DateTime date;
   final String supplier;
@@ -233,6 +240,7 @@ class PurchaseReportInvoice {
     List<LineReportRow> items = const [],
   }) {
     return PurchaseReportInvoice(
+      id: m['id'] as int,
       invoiceNo: _no(m['invoice_no'], m['id']),
       date: _date(m['invoice_date']),
       supplier: (m['company_name'] as String?)?.trim() ?? '',
@@ -248,6 +256,7 @@ class PurchaseReportInvoice {
 /// A purchase-return row (no detail panel — quantity + value only).
 class ReturnReportRow {
   const ReturnReportRow({
+    required this.id,
     required this.invoiceNo,
     required this.date,
     required this.party,
@@ -255,6 +264,8 @@ class ReturnReportRow {
     required this.grandTotal,
   });
 
+  /// Row id in `purchase_return` — used to reprint the return from the report.
+  final int id;
   final String invoiceNo;
   final DateTime date;
   final String party;
@@ -263,6 +274,7 @@ class ReturnReportRow {
 
   factory ReturnReportRow.fromMap(Map<String, dynamic> m) {
     return ReturnReportRow(
+      id: m['id'] as int,
       invoiceNo: _no(m['invoice_no'], m['id']),
       date: _date(m['return_date']),
       party: (m['party'] as String?)?.trim() ?? '',

@@ -49,6 +49,8 @@ class PartyLedgerDataSource {
           debit: _d(m['amt']),
           credit: 0,
           sortKey: (m['ord'] as int) * 10,
+          sourceType: LedgerSourceType.saleInvoice,
+          sourceId: m['ord'] as int,
         ),
       ];
       final paid = _d(m['paid']);
@@ -61,6 +63,8 @@ class PartyLedgerDataSource {
           debit: 0,
           credit: paid,
           sortKey: (m['ord'] as int) * 10 + 1,
+          sourceType: LedgerSourceType.saleInvoice,
+          sourceId: m['ord'] as int,
         ));
       }
       return out;
@@ -81,6 +85,8 @@ class PartyLedgerDataSource {
           debit: 0,
           credit: _d(m['amt']),
           sortKey: (m['ord'] as int) * 10,
+          sourceType: LedgerSourceType.saleReturn,
+          sourceId: m['ord'] as int,
         ),
       ];
       final refund = _d(m['refund']);
@@ -93,6 +99,8 @@ class PartyLedgerDataSource {
           debit: refund,
           credit: 0,
           sortKey: (m['ord'] as int) * 10 + 1,
+          sourceType: LedgerSourceType.saleReturn,
+          sourceId: m['ord'] as int,
         ));
       }
       return out;
@@ -112,6 +120,8 @@ class PartyLedgerDataSource {
             debit: 0,
             credit: _d(m['amt']),
             sortKey: (m['ord'] as int) * 10,
+            sourceType: LedgerSourceType.customerPayment,
+            sourceId: m['ord'] as int,
           ),
         ]);
 
@@ -148,6 +158,8 @@ class PartyLedgerDataSource {
           debit: _d(m['amt']),
           credit: 0,
           sortKey: (m['ord'] as int) * 10,
+          sourceType: LedgerSourceType.purchaseInvoice,
+          sourceId: m['ord'] as int,
         ),
       ];
       final paid = _d(m['paid']);
@@ -160,6 +172,8 @@ class PartyLedgerDataSource {
           debit: 0,
           credit: paid,
           sortKey: (m['ord'] as int) * 10 + 1,
+          sourceType: LedgerSourceType.purchaseInvoice,
+          sourceId: m['ord'] as int,
         ));
       }
       return out;
@@ -179,6 +193,8 @@ class PartyLedgerDataSource {
             debit: 0,
             credit: _d(m['amt']),
             sortKey: (m['ord'] as int) * 10,
+            sourceType: LedgerSourceType.purchaseReturn,
+            sourceId: m['ord'] as int,
           ),
         ]);
 
@@ -196,6 +212,8 @@ class PartyLedgerDataSource {
             debit: 0,
             credit: _d(m['amt']),
             sortKey: (m['ord'] as int) * 10,
+            sourceType: LedgerSourceType.companyPayment,
+            sourceId: m['ord'] as int,
           ),
         ]);
 
