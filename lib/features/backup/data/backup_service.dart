@@ -146,6 +146,14 @@ class BackupService {
   /// longer exist locally.
   Future<BackupOutcome> backup() async {
     await ensureLocalSchemas();
+    // A fresh / cleared machine would otherwise upsert its seed rows and then
+    // prune every other cloud row — wiping the very backup it should restore.
+    if (await isLocalEmpty()) {
+      throw BackupException(
+        'Skipped: the local database is empty, so the cloud backup was left '
+        'untouched. Restore it first, or add data before backing up.',
+      );
+    }
     final client = _client();
     final runAt = DateTime.now().toUtc();
     final runAtIso = runAt.toIso8601String();
@@ -190,6 +198,45 @@ class BackupService {
   }
 
   // ── Restore ────────────────────────────────────────────────────────
+  /// True on a brand-new install: no stock / invoices and no user besides the
+  /// seeded default `admin`. Unlike [isLocalEmpty] this creates nothing (so it
+  /// can run at startup, before login seeds anything) — missing tables count
+  /// as empty.
+  Future<bool> isFreshInstall() async {
+    final present = await _existingTables();
+    Future<int> count(String table, [String where = '']) async {
+      if (!present.contains(table)) return 0;
+      final r = await _local.execute('SELECT count(*) FROM $table $where');
+      return (r.first[0] as num?)?.toInt() ?? 0;
+    }
+
+    for (final t in const ['stock_item', 'sale_invoice', 'purchase_invoice']) {
+      if (await count(t) > 0) return false;
+    }
+    return await count('users', "WHERE username <> 'admin'") == 0;
+  }
+
+  /// How much is stored in the cloud backup and when it was last written.
+  Future<({int rows, DateTime? lastAt})> cloudSummary() async {
+    final client = _client();
+    try {
+      final res = await client
+          .from(cloudTable)
+          .select('backed_up_at')
+          .order('backed_up_at', ascending: false)
+          .limit(1)
+          .count(CountOption.exact);
+      final last = res.data.isEmpty
+          ? null
+          : DateTime.tryParse('${res.data.first['backed_up_at']}')?.toLocal();
+      return (rows: res.count, lastAt: last);
+    } on PostgrestException catch (e) {
+      throw BackupException(_supabaseError(e));
+    } finally {
+      await client.dispose();
+    }
+  }
+
   Future<bool> isLocalEmpty() async {
     await ensureLocalSchemas();
     final r = await _local.execute('''
@@ -248,26 +295,24 @@ class BackupService {
       }
 
       await _local.runTx((s) async {
-        await s.execute(
-          'TRUNCATE ${targets.join(', ')} RESTART IDENTITY CASCADE',
-        );
+        // No RESTART IDENTITY: it needs to *own* each sequence, and on many
+        // installs they belong to `postgres`. [_resetSequenceSql] below only
+        // needs UPDATE on them.
+        await s.execute('TRUNCATE ${targets.join(', ')} CASCADE');
         for (final table in targets) {
           final rows = byTable[table]!;
-          if (rows.isEmpty) continue;
-          await s.execute(
-            Sql.named(
-              'INSERT INTO $table '
-              'SELECT * FROM jsonb_populate_recordset(NULL::$table, @j::jsonb)',
-            ),
-            parameters: {'j': jsonEncode(rows)},
-          );
-          // Move each SERIAL sequence past the ids we just forced in.
-          await s.execute(
-            "SELECT setval(pg_get_serial_sequence('$table', 'id'), "
-            "GREATEST((SELECT COALESCE(MAX(id), 1) FROM $table), 1))",
-          );
-          tableCount++;
-          rowCount += rows.length;
+          if (rows.isNotEmpty) {
+            await s.execute(
+              Sql.named(
+                'INSERT INTO $table SELECT * FROM '
+                'jsonb_populate_recordset(NULL::$table, @j::jsonb)',
+              ),
+              parameters: {'j': jsonEncode(rows)},
+            );
+            tableCount++;
+            rowCount += rows.length;
+          }
+          await s.execute(_resetSequenceSql(table));
         }
       });
 
@@ -340,13 +385,24 @@ class BackupService {
     );
     final removed = ((counts.first.toColumnMap()['n'] as num?) ?? 0).toInt();
 
-    await _local.execute(
-      'TRUNCATE ${targets.join(', ')} RESTART IDENTITY CASCADE',
-    );
+    await _local.runTx((s) async {
+      // See restore(): RESTART IDENTITY would need sequence ownership.
+      await s.execute('TRUNCATE ${targets.join(', ')} CASCADE');
+      for (final table in targets) {
+        await s.execute(_resetSequenceSql(table));
+      }
+    });
     // Re-seed the rows the app expects to exist.
     await ensureLocalSchemas();
     return removed;
   }
+
+  /// Points [table]'s `id` sequence just past its highest id (or at 1 when
+  /// empty). A no-op for tables without a SERIAL id.
+  static String _resetSequenceSql(String table) =>
+      "SELECT setval(seq, COALESCE((SELECT MAX(id) FROM $table), 0) + 1, "
+      "false) FROM pg_get_serial_sequence('$table', 'id') AS seq "
+      'WHERE seq IS NOT NULL';
 
   static String _csvValue(Object? v) => switch (v) {
         null => '',

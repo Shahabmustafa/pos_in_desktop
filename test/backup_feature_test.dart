@@ -8,6 +8,7 @@ import 'package:pos/features/backup/data/model/backup_settings_model.dart';
 import 'package:pos/features/backup/data/repository/backup_repository.dart';
 import 'package:pos/features/backup/presentation/provider/backup_provider.dart';
 import 'package:pos/features/backup/presentation/screen/backup_screen.dart';
+import 'package:pos/features/backup/presentation/screen/restore_backup_screen.dart';
 
 class _FakeSettingsDataSource extends BackupSettingsDataSource {
   _FakeSettingsDataSource([BackupSettingsModel? initial])
@@ -47,10 +48,16 @@ class _FakeSettingsDataSource extends BackupSettingsDataSource {
 }
 
 class _FakeService extends BackupService {
-  _FakeService({this.throwing = false})
+  _FakeService({this.throwing = false, this.cloudRows = 400})
       : super(supabaseUrl: 'https://x.supabase.co', supabaseKey: 'k');
 
   final bool throwing;
+  final int cloudRows;
+  int restores = 0;
+
+  @override
+  Future<({int rows, DateTime? lastAt})> cloudSummary() async =>
+      (rows: cloudRows, lastAt: DateTime(2026, 10, 1, 14, 5));
 
   @override
   Future<BackupOutcome> backup() async {
@@ -59,8 +66,10 @@ class _FakeService extends BackupService {
   }
 
   @override
-  Future<BackupOutcome> restore() async =>
-      const BackupOutcome(tables: 20, rows: 400);
+  Future<BackupOutcome> restore() async {
+    restores++;
+    return const BackupOutcome(tables: 20, rows: 400);
+  }
 
   @override
   Future<({String folder, int tables, int rows})> exportCsv(String dir) async =>
@@ -201,5 +210,74 @@ void main() {
       ),
     );
     expect(backupBtn.onPressed, isNull); // not configured yet
+  });
+
+  group('startup restore screen', () {
+    const configured = BackupSettingsModel(
+      enabled: true,
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseKey: 'k',
+    );
+
+    Future<void> pump(WidgetTester tester, BackupProvider p,
+        ValueChanged<bool> onDone) async {
+      tester.view.physicalSize = const Size(1100, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      await tester.pumpWidget(MaterialApp(
+        home: RestoreBackupScreen(provider: p, onDone: onDone),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('finds the backup, restores it, then continues',
+        (tester) async {
+      final svc = _FakeService();
+      final p = BackupProvider(
+          _FakeRepository(_FakeSettingsDataSource(configured), service: svc));
+      bool? done;
+      await pump(tester, p, (v) => done = v);
+
+      expect(find.text('Restore your data'), findsOneWidget);
+      expect(find.textContaining('Backup found: 400 row(s)'), findsOneWidget);
+
+      await tester.tap(find.text('Restore backup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Restore'));
+      await tester.pumpAndSettle();
+
+      expect(svc.restores, 1);
+      expect(find.text('Backup restored'), findsOneWidget);
+      await tester.tap(find.text('Continue to sign in'));
+      expect(done, isTrue);
+    });
+
+    testWidgets('empty cloud disables restore; skip continues',
+        (tester) async {
+      final p = BackupProvider(_FakeRepository(
+        _FakeSettingsDataSource(configured),
+        service: _FakeService(cloudRows: 0),
+      ));
+      bool? done;
+      await pump(tester, p, (v) => done = v);
+
+      expect(find.textContaining('No backup was found'), findsOneWidget);
+      final btn = tester.widget<ButtonStyleButton>(find.ancestor(
+        of: find.text('Restore backup'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ));
+      expect(btn.onPressed, isNull);
+
+      await tester.tap(find.text('Skip — start fresh'));
+      expect(done, isFalse);
+    });
+
+    testWidgets('unconfigured: shows the connection form', (tester) async {
+      final p = BackupProvider(_FakeRepository(_FakeSettingsDataSource()));
+      await pump(tester, p, (_) {});
+
+      expect(find.widgetWithText(TextField, 'Project URL'), findsOneWidget);
+      expect(find.textContaining('Enter your Supabase URL'), findsOneWidget);
+    });
   });
 }

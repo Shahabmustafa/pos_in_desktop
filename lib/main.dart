@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'config/database/database_connection.dart';
 import 'config/theme/app_theme.dart';
 import 'features/backup/backup_scheduler.dart';
+import 'features/backup/data/backup_service.dart';
+import 'features/backup/presentation/screen/restore_backup_screen.dart';
 import 'features/receipt_settings/data/repository/receipt_settings_repository.dart';
 import 'features/login/presentation/provider/login_provider.dart';
 import 'features/login/presentation/screen/login_screen.dart';
@@ -42,7 +44,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Shows the login screen until a user signs in, then the home page.
+/// On a brand-new install (no data, no users) first offers to restore the
+/// cloud backup; then shows the login screen until a user signs in, then the
+/// home page.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -53,10 +57,33 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   final LoginProvider _auth = LoginProvider();
 
+  /// `null` while checking; true → show [RestoreBackupScreen] first.
+  bool? _offerRestore;
+
   @override
   void initState() {
     super.initState();
     _auth.restore();
+    _checkFreshInstall();
+  }
+
+  Future<void> _checkFreshInstall() async {
+    var fresh = false;
+    try {
+      // Only the local DB is read here; the credentials are irrelevant.
+      fresh = await BackupService(supabaseUrl: '', supabaseKey: '')
+          .isFreshInstall();
+    } catch (e) {
+      // DB offline etc. — fall through to the login screen, which reports it.
+      debugPrint('AuthGate: fresh-install check failed: $e');
+    }
+    if (mounted) setState(() => _offerRestore = fresh);
+  }
+
+  Future<void> _onRestoreDone(bool restored) async {
+    // The shop header came back with the data — reload it for receipts.
+    if (restored) await preloadReceiptSettings();
+    if (mounted) setState(() => _offerRestore = false);
   }
 
   @override
@@ -70,10 +97,13 @@ class _AuthGateState extends State<AuthGate> {
     return ListenableBuilder(
       listenable: _auth,
       builder: (context, _) {
-        if (_auth.restoring) {
+        if (_auth.restoring || _offerRestore == null) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+        if (_offerRestore! && !_auth.isLoggedIn) {
+          return RestoreBackupScreen(onDone: _onRestoreDone);
         }
         if (!_auth.isLoggedIn) {
           return LoginScreen(provider: _auth, onLoggedIn: (_) {});

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:postgres/postgres.dart';
 
 import '../../../../config/format.dart';
 import '../../data/backup_service.dart';
@@ -130,8 +131,37 @@ class BackupProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> restoreNow() async {
-    if (_busy) return;
+  bool _checkingCloud = false;
+
+  /// True while [checkCloud] is asking Supabase what it holds.
+  bool get checkingCloud => _checkingCloud;
+
+  ({int rows, DateTime? lastAt})? _cloud;
+
+  /// Size + age of the cloud backup, once [checkCloud] has succeeded.
+  ({int rows, DateTime? lastAt})? get cloud => _cloud;
+
+  /// Looks up how many rows the cloud backup holds (for the startup restore
+  /// screen). Failures land in [error].
+  Future<void> checkCloud() async {
+    if (!_settings.isConfigured) return;
+    _checkingCloud = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _cloud = await _repository.serviceFor(_settings).cloudSummary();
+    } catch (e) {
+      _cloud = null;
+      _error = _friendly(e);
+    } finally {
+      _checkingCloud = false;
+      notifyListeners();
+    }
+  }
+
+  /// Returns `true` when the restore succeeded.
+  Future<bool> restoreNow() async {
+    if (_busy) return false;
     _busy = true;
     _error = null;
     _message = null;
@@ -140,8 +170,10 @@ class BackupProvider extends ChangeNotifier {
       final service = _repository.serviceFor(_settings);
       final outcome = await service.restore();
       _message = 'Restored ${outcome.summary}. Restart the app to see it.';
+      return true;
     } catch (e) {
       _error = _friendly(e);
+      return false;
     } finally {
       _busy = false;
       notifyListeners();
@@ -152,7 +184,9 @@ class BackupProvider extends ChangeNotifier {
     if (e is BackupException) return e.message;
     final t = e.toString();
     if (t.contains('42501')) {
-      return 'Permission denied on the local database.';
+      // Keep Postgres' own text — it names the table / sequence to fix.
+      return 'Permission denied on the local database: '
+          '${e is ServerException ? e.message : t}';
     }
     if (t.contains('SocketException') || t.contains('Failed host lookup')) {
       return 'Cannot reach Supabase. Check the URL and your internet.';
