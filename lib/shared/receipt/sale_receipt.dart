@@ -200,7 +200,16 @@ Future<Uint8List> buildReceiptPdf(ReceiptData data) async {
             style: _tiny),
       ),
       build: (context) => [
-        _itemsTable(context, data, showDiscountCol),
+        // At most [_rowsPerPage] products per page, the rest continue on the
+        // next page — a full A4 page would otherwise get its bottom rows cut
+        // off on printers using Letter paper or larger hardware margins.
+        for (var start = 0;
+            start < data.lines.length || start == 0;
+            start += _rowsPerPage) ...[
+          if (start > 0) pw.NewPage(),
+          _itemsTable(context, data, showDiscountCol, start,
+              (start + _rowsPerPage).clamp(0, data.lines.length)),
+        ],
         pw.SizedBox(height: 10),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.end,
@@ -283,10 +292,10 @@ pw.Widget _infoGrid(ReceiptData data, ReceiptSettingsModel s, String dateStr) {
 }
 
 /// The bordered item table: No. | Description of Goods | Qty | Rate |
-/// [Discount] | Amount. Splits across pages automatically for a long invoice,
-/// repeating the column header on each new page.
-pw.Widget _itemsTable(
-    pw.Context context, ReceiptData data, bool showDiscountCol) {
+/// [Discount] | Amount for lines [start, end). Still splits across pages if a
+/// chunk overflows, repeating the column header on each new page.
+pw.Widget _itemsTable(pw.Context context, ReceiptData data,
+    bool showDiscountCol, int start, int end) {
   final amountCol = showDiscountCol ? 5 : 4;
   return pw.TableHelper.fromTextArray(
     context: context,
@@ -299,7 +308,7 @@ pw.Widget _itemsTable(
       'Amount',
     ],
     data: [
-      for (var i = 0; i < data.lines.length; i++)
+      for (var i = start; i < end; i++)
         [
           '${i + 1}',
           data.lines[i].name,
@@ -348,6 +357,9 @@ pw.Widget _totalRow(String label, double value, {bool bold = false}) {
     ),
   );
 }
+
+/// Max products printed on one page before breaking to the next.
+const int _rowsPerPage = 30;
 
 final pw.TextStyle _normal = const pw.TextStyle(fontSize: 9.5);
 final pw.TextStyle _small = const pw.TextStyle(fontSize: 8.5);
